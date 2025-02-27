@@ -1,22 +1,25 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { handleMercadoLibreWebhook } from './src/api/webhooks.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 8080;
+const HOST = process.env.HOST || '0.0.0.0';
 
 // Middleware para parsear JSON
 app.use(express.json());
 
 // Log para depuración
-console.log(`Iniciando servidor en puerto ${PORT}`);
+console.log(`Iniciando servidor en ${HOST}:${PORT}`);
 
 // Endpoint para webhooks de MercadoLibre
-app.post('/api/webhooks/mercadolibre', handleMercadoLibreWebhook);
+app.post('/api/webhooks/mercadolibre', (req, res) => {
+  console.log('Webhook recibido:', req.body);
+  return res.status(200).json({ status: 'ok' });
+});
 
 // Servir archivos estáticos
 app.use(express.static(path.join(__dirname, 'dist')));
@@ -27,6 +30,6 @@ app.get('*', (req, res) => {
 });
 
 // Iniciar el servidor
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor ejecutándose en http://0.0.0.0:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Servidor ejecutándose en http://${HOST}:${PORT}`);
 });

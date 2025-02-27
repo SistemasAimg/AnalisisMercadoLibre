@@ -20,9 +20,9 @@ WORKDIR /app
 
 # Copy package files and install only production dependencies
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --production
 
-# Copy server file and built assets from build stage
+# Copy built assets and server files
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.js ./server.js
 COPY --from=build /app/src/api ./src/api
@@ -35,6 +35,11 @@ EXPOSE 8080
 # Set environment variables
 ENV PORT=8080
 ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+  CMD wget -qO- http://localhost:8080/ || exit 1
 
 # Start the server
 CMD ["node", "server.js"]
