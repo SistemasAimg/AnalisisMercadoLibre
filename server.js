@@ -12,6 +12,9 @@ const PORT = process.env.PORT || 8080;
 // Middleware para parsear JSON
 app.use(express.json());
 
+// Log para depuración
+console.log(`Iniciando servidor en puerto ${PORT}`);
+
 // Endpoint para webhooks de MercadoLibre
 app.post('/api/webhooks/mercadolibre', handleMercadoLibreWebhook);
 
@@ -24,6 +27,6 @@ app.get('*', (req, res) => {
 });
 
 // Iniciar el servidor
-app.listen(PORT, () => {
-  console.log(`Servidor ejecutándose en el puerto ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Servidor ejecutándose en http://0.0.0.0:${PORT}`);
 });
