@@ -2,6 +2,7 @@ import axios from 'axios';
 import { getAccessToken } from './auth';
 
 const API_BASE_URL = 'https://api.mercadolibre.com';
+const PROXY_BASE_URL = '/api/proxy';
 
 // Crear una instancia de axios con configuración base
 const api = axios.create({
@@ -114,42 +115,70 @@ export interface MarketAnalysis {
   recommendations: string[];
 }
 
-// Funciones públicas que no requieren autenticación
+// Funciones públicas que no requieren autenticación (usando el proxy)
 export const searchProducts = async (query: string, limit = 20, offset = 0): Promise<SearchResponse> => {
-  const response = await axios.get(`${API_BASE_URL}/sites/MLA/search`, {
-    params: {
-      q: query,
-      limit,
-      offset,
-    },
-  });
-  return response.data;
+  try {
+    const response = await axios.get(`${PROXY_BASE_URL}/search`, {
+      params: {
+        q: query,
+        limit,
+        offset,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error en búsqueda de productos:', error);
+    throw error;
+  }
 };
 
 export const getProductDetails = async (productId: string): Promise<Product> => {
-  const response = await axios.get(`${API_BASE_URL}/items/${productId}`);
-  return response.data;
+  try {
+    const response = await axios.get(`${PROXY_BASE_URL}/items/${productId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error al obtener detalles del producto:', error);
+    throw error;
+  }
 };
 
 export const getCategories = async (): Promise<Category[]> => {
-  const response = await axios.get(`${API_BASE_URL}/sites/MLA/categories`);
-  return response.data;
+  try {
+    const response = await axios.get(`${PROXY_BASE_URL}/categories`);
+    return response.data;
+  } catch (error) {
+    console.error('Error al obtener categorías:', error);
+    throw error;
+  }
 };
 
 export const getProductsByCategory = async (categoryId: string, limit = 20, offset = 0): Promise<SearchResponse> => {
-  const response = await axios.get(`${API_BASE_URL}/sites/MLA/search`, {
-    params: {
-      category: categoryId,
-      limit,
-      offset,
-    },
-  });
-  return response.data;
+  try {
+    const response = await axios.get(`${PROXY_BASE_URL}/search`, {
+      params: {
+        category: categoryId,
+        limit,
+        offset,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error al obtener productos por categoría:', error);
+    throw error;
+  }
 };
 
 export const getTrends = async (): Promise<Trend[]> => {
-  const response = await axios.get(`${API_BASE_URL}/trends/MLA`);
-  return response.data;
+  try {
+    console.log('Solicitando tendencias a través del proxy');
+    const response = await axios.get(`${PROXY_BASE_URL}/trends`);
+    console.log('Tendencias recibidas:', response.data.length);
+    return response.data;
+  } catch (error) {
+    console.error('Error al obtener tendencias:', error);
+    // En caso de error, devolver un array vacío para evitar errores en la UI
+    return [];
+  }
 };
 
 // Funciones que requieren autenticación

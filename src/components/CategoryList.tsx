@@ -13,6 +13,9 @@ const CategoryList: React.FC<CategoryListProps> = ({
   onSelectCategory, 
   selectedCategory 
 }) => {
+  // Asegurarse de que categories sea un array
+  const categoriesArray = Array.isArray(categories) ? categories : [];
+
   return (
     <div className="bg-white rounded-lg shadow-md p-4">
       <div className="flex items-center mb-4">
@@ -20,7 +23,7 @@ const CategoryList: React.FC<CategoryListProps> = ({
         <h2 className="text-lg font-medium text-gray-800">Categorías</h2>
       </div>
       <div className="space-y-1">
-        {categories.map((category) => (
+        {categoriesArray.map((category) => (
           <button
             key={category.id}
             onClick={() => onSelectCategory(category.id)}

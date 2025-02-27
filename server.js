@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import axios from 'axios';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,6 +15,69 @@ app.use(express.json());
 
 // Log para depuración
 console.log(`Iniciando servidor en ${HOST}:${PORT}`);
+
+// Proxy para la API de MercadoLibre
+app.get('/api/proxy/trends', async (req, res) => {
+  try {
+    console.log('Solicitando tendencias a MercadoLibre');
+    const response = await axios.get('https://api.mercadolibre.com/trends/MLA');
+    console.log('Respuesta recibida de MercadoLibre');
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener tendencias:', error.message);
+    if (error.response) {
+      console.error('Detalles del error:', error.response.status, error.response.data);
+      res.status(error.response.status).json({
+        error: 'Error al obtener tendencias',
+        details: error.response.data
+      });
+    } else {
+      res.status(500).json({ error: 'Error al obtener tendencias' });
+    }
+  }
+});
+
+// Proxy para categorías
+app.get('/api/proxy/categories', async (req, res) => {
+  try {
+    const response = await axios.get('https://api.mercadolibre.com/sites/MLA/categories');
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener categorías:', error.message);
+    res.status(500).json({ error: 'Error al obtener categorías' });
+  }
+});
+
+// Proxy para búsqueda de productos
+app.get('/api/proxy/search', async (req, res) => {
+  try {
+    const { q, category, limit, offset } = req.query;
+    const params = {};
+    
+    if (q) params.q = q;
+    if (category) params.category = category;
+    if (limit) params.limit = limit;
+    if (offset) params.offset = offset;
+    
+    const response = await axios.get('https://api.mercadolibre.com/sites/MLA/search', { params });
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error en búsqueda de productos:', error.message);
+    res.status(500).json({ error: 'Error en búsqueda de productos' });
+  }
+});
+
+// Proxy para detalles de producto
+app.get('/api/proxy/items/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const response = await axios.get(`https://api.mercadolibre.com/items/${id}`);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener detalles del producto:', error.message);
+    res.status(500).json({ error: 'Error al obtener detalles del producto' });
+  }
+});
 
 // Endpoint para webhooks de MercadoLibre
 app.post('/api/webhooks/mercadolibre', (req, res) => {

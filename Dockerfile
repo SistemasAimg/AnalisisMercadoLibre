@@ -25,9 +25,6 @@ RUN npm ci --production
 # Copy built assets and server files
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.js ./server.js
-COPY --from=build /app/src/api ./src/api
-COPY --from=build /app/src/services/webhooks.ts ./src/services/webhooks.ts
-COPY --from=build /app/src/services/auth.ts ./src/services/auth.ts
 
 # Expose port
 EXPOSE 8080

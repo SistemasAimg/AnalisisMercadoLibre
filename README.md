@@ -23,7 +23,7 @@ Para que el flujo de trabajo funcione, debes configurar los siguientes secretos 
 - `GCP_SA_EMAIL`: El email de la cuenta de servicio (ejemplo: `service-account@project-id.iam.gserviceaccount.com`)
 - `WIF_PROVIDER`: El ID del proveedor de identidad de Workload Identity Federation
 
-### Configuración de Workload Identity Federation prueba github
+### Configuración de Workload Identity Federation
 
 1. Crea un pool de proveedores de identidad:
    ```

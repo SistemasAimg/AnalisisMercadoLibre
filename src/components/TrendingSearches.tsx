@@ -8,6 +8,9 @@ interface TrendingSearchesProps {
 }
 
 const TrendingSearches: React.FC<TrendingSearchesProps> = ({ trends, onSelectTrend }) => {
+  // Asegurarse de que trends sea un array
+  const trendsArray = Array.isArray(trends) ? trends : [];
+
   return (
     <div className="bg-white rounded-lg shadow-md p-4">
       <div className="flex items-center mb-4">
@@ -15,7 +18,7 @@ const TrendingSearches: React.FC<TrendingSearchesProps> = ({ trends, onSelectTre
         <h2 className="text-lg font-medium text-gray-800">Tendencias</h2>
       </div>
       <div className="flex flex-wrap gap-2">
-        {trends.map((trend, index) => (
+        {trendsArray.map((trend, index) => (
           <button
             key={index}
             onClick={() => onSelectTrend(trend.keyword)}

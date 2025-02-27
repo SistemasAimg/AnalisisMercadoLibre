@@ -46,14 +46,24 @@ function App() {
   // Fetch categories
   const { 
     data: categories = [], 
-    isLoading: categoriesLoading 
-  } = useQuery<Category[]>('categories', getCategories);
+    isLoading: categoriesLoading,
+    error: categoriesError
+  } = useQuery<Category[]>('categories', getCategories, {
+    onError: (error) => {
+      console.error('Error al cargar categorías:', error);
+    }
+  });
 
   // Fetch trending searches
   const { 
     data: trends = [], 
-    isLoading: trendsLoading 
-  } = useQuery<Trend[]>('trends', getTrends);
+    isLoading: trendsLoading,
+    error: trendsError
+  } = useQuery<Trend[]>('trends', getTrends, {
+    onError: (error) => {
+      console.error('Error al cargar tendencias:', error);
+    }
+  });
 
   // Fetch products based on search query or category
   const { 
@@ -107,6 +117,10 @@ function App() {
     setSelectedProduct(null);
   };
 
+  // Asegurarse de que categories y trends sean arrays
+  const categoriesArray = Array.isArray(categories) ? categories : [];
+  const trendsArray = Array.isArray(trends) ? trends : [];
+
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="bg-blue-600 text-white">
@@ -137,7 +151,7 @@ function App() {
             <div className="md:col-span-1 space-y-6">
               {!categoriesLoading && (
                 <CategoryList 
-                  categories={categories} 
+                  categories={categoriesArray} 
                   onSelectCategory={handleSelectCategory}
                   selectedCategory={selectedCategory}
                 />
@@ -145,7 +159,7 @@ function App() {
               
               {!trendsLoading && (
                 <TrendingSearches 
-                  trends={trends} 
+                  trends={trendsArray} 
                   onSelectTrend={handleSelectTrend} 
                 />
               )}
