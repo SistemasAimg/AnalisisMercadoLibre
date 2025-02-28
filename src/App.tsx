@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from 'react-query';
 import { BarChart3, Search, TrendingUp, Bell } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -130,7 +130,7 @@ function App() {
         {!selectedProduct ? (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="md:col-span-1 space-y-6">
-              {!categoriesLoading && (
+              {!categoriesLoading && categoriesArray.length > 0 && (
                 <CategoryList 
                   categories={categoriesArray} 
                   onSelectCategory={handleSelectCategory}

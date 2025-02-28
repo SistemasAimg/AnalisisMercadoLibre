@@ -8,47 +8,58 @@ const AuthCallback: React.FC = () => {
   const [countdown, setCountdown] = useState(5);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | null = null;
-
+    let isMounted = true;
+    let timer: NodeJS.Timeout;
+    
     const handleCallback = async () => {
       try {
         // Obtener el código de la URL
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
+        
         console.log('Código de autorización recibido:', code ? 'Sí (presente)' : 'No (ausente)');
-
+        
         if (!code) {
           throw new Error('No se recibió el código de autorización');
         }
-
+        
         // Intercambiar el código por un token
         await exchangeCodeForToken(code);
-        setStatus('success');
-
-        // Iniciar cuenta regresiva para redirección
-        let count = 5;
-        setCountdown(count);
-
-        timer = setInterval(() => {
-          count -= 1;
+        
+        if (isMounted) {
+          setStatus('success');
+          
+          // Iniciar cuenta regresiva para redirección
+          let count = 5;
           setCountdown(count);
-
-          if (count <= 0) {
-            if (timer) clearInterval(timer);
-            window.location.href = '/';
-          }
-        }, 1000);
+          
+          timer = setInterval(() => {
+            count -= 1;
+            
+            if (isMounted) {
+              setCountdown(count);
+            }
+            
+            if (count <= 0) {
+              clearInterval(timer);
+              window.location.href = '/';
+            }
+          }, 1000);
+        }
       } catch (err) {
         console.error('Error en el callback:', err);
-        setStatus('error');
-        setError(err instanceof Error ? err.message : 'Error desconocido durante la autenticación');
+        
+        if (isMounted) {
+          setStatus('error');
+          setError(err instanceof Error ? err.message : 'Error desconocido durante la autenticación');
+        }
       }
     };
 
     handleCallback();
-
-    // Retornar una función de limpieza de forma síncrona
+    
     return () => {
+      isMounted = false;
       if (timer) clearInterval(timer);
     };
   }, []);
@@ -63,7 +74,8 @@ const AuthCallback: React.FC = () => {
             </div>
             <h2 className="text-xl font-medium text-gray-800 mb-2">Autenticando...</h2>
             <p className="text-gray-600">
-              Estamos procesando tu inicio de sesión con MercadoLibre. Por favor, espera un momento.
+              Estamos procesando tu inicio de sesión con MercadoLibre.
+              Por favor, espera un momento.
             </p>
           </div>
         )}

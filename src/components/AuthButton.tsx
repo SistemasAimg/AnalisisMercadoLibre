@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { LogIn, LogOut } from 'lucide-react';
 import { isAuthenticated, getAuthUrl, logout } from '../services/auth';
 
 const AuthButton: React.FC = () => {
   const authenticated = isAuthenticated();
 
-  const handleAuth = () => {
+  const handleAuth = useCallback(() => {
     if (authenticated) {
       logout();
     } else {
@@ -13,7 +13,7 @@ const AuthButton: React.FC = () => {
       console.log('Redirigiendo a URL de autenticación:', authUrl);
       window.location.href = authUrl;
     }
-  };
+  }, [authenticated]);
 
   return (
     <button

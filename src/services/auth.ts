@@ -27,6 +27,11 @@ export interface AuthToken {
  * Obtiene la URL de autorización para iniciar el flujo OAuth
  */
 export const getAuthUrl = (): string => {
+  // Asegurarse de que CLIENT_ID no esté vacío
+  if (!CLIENT_ID) {
+    console.error('CLIENT_ID no está definido');
+  }
+  
   console.log('Generando URL de autenticación con CLIENT_ID:', CLIENT_ID);
   return `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
 };
@@ -175,7 +180,6 @@ export const getUserId = (): string | null => {
  */
 export const isAuthenticated = (): boolean => {
   const hasToken = !!Cookies.get(ACCESS_TOKEN_COOKIE);
-  console.log('¿Usuario autenticado?', hasToken);
   return hasToken;
 };
 
