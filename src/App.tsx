@@ -51,8 +51,6 @@ function App() {
     }
   });
 
-  // Se eliminó la consulta de tendencias, ya que no se usará.
-
   // Fetch products based on search query or category
   const { 
     data: searchResults, 
@@ -100,6 +98,10 @@ function App() {
   // Asegurarse de que categories sea un array
   const categoriesArray = Array.isArray(categories) ? categories : [];
 
+  // Asegurarse de que searchResults.results sea un array
+  const searchResultsArray = searchResults?.results || [];
+  const searchResultsPaging = searchResults?.paging || { total: 0, offset: 0, limit: 20 };
+
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="bg-blue-600 text-white">
@@ -135,7 +137,6 @@ function App() {
                   selectedCategory={selectedCategory}
                 />
               )}
-              {/* Se elimina la sección de tendencias */}
             </div>
             
             <div className="md:col-span-3">
@@ -176,13 +177,13 @@ function App() {
                     <div className="flex justify-center items-center h-64">
                       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                     </div>
-                  ) : searchResults && searchResults.results.length > 0 ? (
+                  ) : searchResultsArray.length > 0 ? (
                     <div>
                       <p className="text-gray-600 mb-4">
-                        {searchResults.paging.total} resultados para {searchQuery || `categoría: ${selectedCategory}`}
+                        {searchResultsPaging.total} resultados para {searchQuery || `categoría: ${selectedCategory}`}
                       </p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {searchResults.results.map((product) => (
+                        {searchResultsArray.map((product) => (
                           <ProductCard 
                             key={product.id} 
                             product={product} 
