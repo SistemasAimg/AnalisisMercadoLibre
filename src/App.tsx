@@ -6,7 +6,7 @@ import SearchBar from './components/SearchBar';
 import ProductCard from './components/ProductCard';
 import ProductDetail from './components/ProductDetail';
 import CategoryList from './components/CategoryList';
-import TrendingSearches from './components/TrendingSearches';
+// Eliminamos la importación de TrendingSearches
 import MarketInsights from './components/MarketInsights';
 import AuthButton from './components/AuthButton';
 import AuthCallback from './components/AuthCallback';
@@ -14,10 +14,9 @@ import {
   searchProducts, 
   getCategories, 
   getProductsByCategory, 
-  getTrends,
+  // Eliminamos getTrends de la importación
   Product, 
-  Category, 
-  Trend 
+  Category 
 } from './services/api';
 
 function App() {
@@ -54,16 +53,7 @@ function App() {
     }
   });
 
-  // Fetch trending searches
-  const { 
-    data: trends = [], 
-    isLoading: trendsLoading,
-    error: trendsError
-  } = useQuery<Trend[]>('trends', getTrends, {
-    onError: (error) => {
-      console.error('Error al cargar tendencias:', error);
-    }
-  });
+  // Se eliminó la consulta de tendencias, ya que no se usará.
 
   // Fetch products based on search query or category
   const { 
@@ -101,14 +91,6 @@ function App() {
     refetchProducts();
   };
 
-  const handleSelectTrend = (keyword: string) => {
-    setSearchQuery(keyword);
-    setSelectedCategory(null);
-    setSelectedProduct(null);
-    setActiveTab('products');
-    refetchProducts();
-  };
-
   const handleProductClick = (product: Product) => {
     setSelectedProduct(product);
   };
@@ -117,9 +99,8 @@ function App() {
     setSelectedProduct(null);
   };
 
-  // Asegurarse de que categories y trends sean arrays
+  // Asegurarse de que categories sea un array
   const categoriesArray = Array.isArray(categories) ? categories : [];
-  const trendsArray = Array.isArray(trends) ? trends : [];
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -156,13 +137,7 @@ function App() {
                   selectedCategory={selectedCategory}
                 />
               )}
-              
-              {!trendsLoading && (
-                <TrendingSearches 
-                  trends={trendsArray} 
-                  onSelectTrend={handleSelectTrend} 
-                />
-              )}
+              {/* Se elimina la sección de tendencias */}
             </div>
             
             <div className="md:col-span-3">
