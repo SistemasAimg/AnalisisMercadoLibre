@@ -36,7 +36,11 @@ jobs:
 
       - name: Build and Push Container
         run: |-
-          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} .
+          docker build \
+            --build-arg VITE_ML_CLIENT_ID=${{ secrets.VITE_ML_CLIENT_ID }} \
+            --build-arg VITE_ML_CLIENT_SECRET=${{ secrets.VITE_ML_CLIENT_SECRET }} \
+            --build-arg VITE_ML_REDIRECT_URI=${{ secrets.VITE_ML_REDIRECT_URI }} \
+            -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} .
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
 
       - name: Deploy to Cloud Run
