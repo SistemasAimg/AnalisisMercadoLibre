@@ -8,37 +8,36 @@ const AuthCallback: React.FC = () => {
   const [countdown, setCountdown] = useState(5);
 
   useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null;
+
     const handleCallback = async () => {
       try {
         // Obtener el código de la URL
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
-        
         console.log('Código de autorización recibido:', code ? 'Sí (presente)' : 'No (ausente)');
-        
+
         if (!code) {
           throw new Error('No se recibió el código de autorización');
         }
-        
+
         // Intercambiar el código por un token
         await exchangeCodeForToken(code);
         setStatus('success');
-        
+
         // Iniciar cuenta regresiva para redirección
         let count = 5;
         setCountdown(count);
-        
-        const timer = setInterval(() => {
+
+        timer = setInterval(() => {
           count -= 1;
           setCountdown(count);
-          
+
           if (count <= 0) {
-            clearInterval(timer);
+            if (timer) clearInterval(timer);
             window.location.href = '/';
           }
         }, 1000);
-        
-        return () => clearInterval(timer);
       } catch (err) {
         console.error('Error en el callback:', err);
         setStatus('error');
@@ -47,6 +46,11 @@ const AuthCallback: React.FC = () => {
     };
 
     handleCallback();
+
+    // Retornar una función de limpieza de forma síncrona
+    return () => {
+      if (timer) clearInterval(timer);
+    };
   }, []);
 
   return (
@@ -59,8 +63,7 @@ const AuthCallback: React.FC = () => {
             </div>
             <h2 className="text-xl font-medium text-gray-800 mb-2">Autenticando...</h2>
             <p className="text-gray-600">
-              Estamos procesando tu inicio de sesión con MercadoLibre.
-              Por favor, espera un momento.
+              Estamos procesando tu inicio de sesión con MercadoLibre. Por favor, espera un momento.
             </p>
           </div>
         )}
