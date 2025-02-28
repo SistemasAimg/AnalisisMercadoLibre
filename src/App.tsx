@@ -6,7 +6,6 @@ import SearchBar from './components/SearchBar';
 import ProductCard from './components/ProductCard';
 import ProductDetail from './components/ProductDetail';
 import CategoryList from './components/CategoryList';
-// Eliminamos la importación de TrendingSearches
 import MarketInsights from './components/MarketInsights';
 import AuthButton from './components/AuthButton';
 import AuthCallback from './components/AuthCallback';
@@ -14,7 +13,6 @@ import {
   searchProducts, 
   getCategories, 
   getProductsByCategory, 
-  // Eliminamos getTrends de la importación
   Product, 
   Category 
 } from './services/api';

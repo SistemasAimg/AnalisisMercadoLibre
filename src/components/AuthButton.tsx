@@ -9,7 +9,9 @@ const AuthButton: React.FC = () => {
     if (authenticated) {
       logout();
     } else {
-      window.location.href = getAuthUrl();
+      const authUrl = getAuthUrl();
+      console.log('Redirigiendo a URL de autenticación:', authUrl);
+      window.location.href = authUrl;
     }
   };
 

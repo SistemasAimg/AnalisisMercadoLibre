@@ -14,6 +14,8 @@ const AuthCallback: React.FC = () => {
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
         
+        console.log('Código de autorización recibido:', code ? 'Sí (presente)' : 'No (ausente)');
+        
         if (!code) {
           throw new Error('No se recibió el código de autorización');
         }

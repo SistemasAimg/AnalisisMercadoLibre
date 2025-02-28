@@ -2,8 +2,8 @@ import axios from 'axios';
 import Cookies from 'js-cookie';
 
 // Constantes para la autenticación
-const CLIENT_ID = import.meta.env.VITE_ML_CLIENT_ID || '';
-const CLIENT_SECRET = import.meta.env.VITE_ML_CLIENT_SECRET || '';
+const CLIENT_ID = import.meta.env.VITE_ML_CLIENT_ID || '7074402608653029';
+const CLIENT_SECRET = import.meta.env.VITE_ML_CLIENT_SECRET || 'dRtfnoEZN47gvvDUassK1GdKBhUhteVP';
 const REDIRECT_URI = import.meta.env.VITE_ML_REDIRECT_URI || window.location.origin + '/auth/callback';
 const API_BASE_URL = 'https://api.mercadolibre.com';
 
@@ -27,6 +27,7 @@ export interface AuthToken {
  * Obtiene la URL de autorización para iniciar el flujo OAuth
  */
 export const getAuthUrl = (): string => {
+  console.log('Generando URL de autenticación con CLIENT_ID:', CLIENT_ID);
   return `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
 };
 
@@ -37,6 +38,7 @@ export const exchangeCodeForToken = async (code: string): Promise<AuthToken> => 
   try {
     console.log('Intercambiando código por token...');
     console.log('Redirect URI:', REDIRECT_URI);
+    console.log('Client ID:', CLIENT_ID);
     
     const response = await axios.post(`${API_BASE_URL}/oauth/token`, {
       grant_type: 'authorization_code',
