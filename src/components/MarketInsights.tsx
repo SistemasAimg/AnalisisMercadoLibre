@@ -1,26 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { BarChart3, DollarSign, TrendingUp, Users, AlertCircle, Store } from 'lucide-react';
+import { BarChart3, DollarSign, TrendingUp, Users, AlertCircle, Store, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { useQuery } from 'react-query';
-import { getMarketAnalysis } from '../services/api';
+import { getMarketAnalysis, searchProducts, Product } from '../services/api';
 import { isAuthenticated } from '../services/auth';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
+
+interface StoreProducts {
+  [storeId: number]: {
+    isExpanded: boolean;
+    products: Product[];
+    isLoading: boolean;
+  };
+}
 
 const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
   const [showOfficialStoresOnly, setShowOfficialStoresOnly] = useState(false);
   const [isUserAuthenticated, setIsUserAuthenticated] = useState(false);
   const [showAuthAlert, setShowAuthAlert] = useState(false);
+  const [storeProducts, setStoreProducts] = useState<StoreProducts>({});
   
-  // Check authentication status on component mount and when dependencies change
   useEffect(() => {
     const authStatus = isAuthenticated();
     setIsUserAuthenticated(authStatus);
     setShowAuthAlert(!authStatus);
   }, []);
   
-  // Obtener análisis de mercado
   const { 
     data: analysis, 
     isLoading, 
@@ -30,11 +37,49 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     () => getMarketAnalysis(searchQuery, showOfficialStoresOnly),
     {
       enabled: !!searchQuery && isUserAuthenticated,
-      staleTime: 1000 * 60 * 15, // 15 minutos
+      staleTime: 1000 * 60 * 15,
     }
   );
 
-  // Configurar datos para los gráficos
+  const toggleStoreProducts = async (storeId: number) => {
+    setStoreProducts(prev => ({
+      ...prev,
+      [storeId]: {
+        isExpanded: !prev[storeId]?.isExpanded,
+        products: prev[storeId]?.products || [],
+        isLoading: !prev[storeId]?.products.length
+      }
+    }));
+
+    if (!storeProducts[storeId]?.products.length) {
+      try {
+        const response = await searchProducts(searchQuery, 50, 0, true);
+        const storeProducts = response.results.filter(
+          product => product.official_store_id === storeId
+        );
+
+        setStoreProducts(prev => ({
+          ...prev,
+          [storeId]: {
+            isExpanded: true,
+            products: storeProducts,
+            isLoading: false
+          }
+        }));
+      } catch (error) {
+        console.error('Error al obtener productos de la tienda:', error);
+        setStoreProducts(prev => ({
+          ...prev,
+          [storeId]: {
+            isExpanded: false,
+            products: [],
+            isLoading: false
+          }
+        }));
+      }
+    }
+  };
+
   const priceData = {
     labels: analysis?.priceHistory.map(item => item.date) || [],
     datasets: [
@@ -56,7 +101,6 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     },
   };
 
-  // Formatear precio
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('es-AR', {
       style: 'currency',
@@ -64,18 +108,15 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     }).format(price);
   };
 
-  // Determinar clases para tendencia (positiva/negativa)
   const getTrendClass = (value: number) => {
     return value >= 0 ? 'text-green-600' : 'text-red-600';
   };
 
-  // Formatear porcentaje
   const formatPercent = (value: number) => {
     const sign = value >= 0 ? '+' : '';
     return `${sign}${value.toFixed(1)}%`;
   };
 
-  // Si no hay búsqueda, mostrar mensaje
   if (!searchQuery) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -99,7 +140,6 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
-  // Si el usuario no está autenticado, mostrar alerta
   if (showAuthAlert) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -131,7 +171,6 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
-  // Si está cargando, mostrar spinner
   if (isLoading) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -149,7 +188,6 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
-  // Si hay error, mostrar mensaje
   if (error || !analysis) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -238,23 +276,76 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
         <div className="bg-gray-50 p-4 rounded-lg mb-6">
           <h3 className="text-lg font-medium text-gray-800 mb-4">Tiendas Oficiales</h3>
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {analysis.officialStores.stores.map(store => (
-                <div key={store.id} className="bg-white p-4 rounded-lg shadow-sm">
-                  <h4 className="font-medium text-gray-800 mb-2">{store.name}</h4>
-                  <div className="space-y-2 text-sm text-gray-600">
-                    <div className="flex justify-between">
-                      <span>Productos:</span>
-                      <span className="font-medium">{store.productsCount}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Precio promedio:</span>
-                      <span className="font-medium">{formatPrice(store.averagePrice)}</span>
+            {analysis.officialStores.stores.map(store => (
+              <div key={store.id} className="bg-white p-4 rounded-lg shadow-sm">
+                <button 
+                  onClick={() => toggleStoreProducts(store.id)}
+                  className="w-full flex items-center justify-between"
+                >
+                  <div>
+                    <h4 className="font-medium text-gray-800">{store.name}</h4>
+                    <div className="text-sm text-gray-600 mt-1">
+                      <span>{store.productsCount} productos</span>
+                      <span className="mx-2">•</span>
+                      <span>Precio promedio: {formatPrice(store.averagePrice)}</span>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                  {storeProducts[store.id]?.isExpanded ? (
+                    <ChevronUp size={20} className="text-gray-500" />
+                  ) : (
+                    <ChevronDown size={20} className="text-gray-500" />
+                  )}
+                </button>
+
+                {storeProducts[store.id]?.isExpanded && (
+                  <div className="mt-4 border-t pt-4">
+                    {storeProducts[store.id]?.isLoading ? (
+                      <div className="flex justify-center py-4">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                      </div>
+                    ) : storeProducts[store.id]?.products.length > 0 ? (
+                      <div className="space-y-4">
+                        {storeProducts[store.id].products.map(product => (
+                          <div key={product.id} className="flex items-start space-x-4 p-2 hover:bg-gray-50 rounded-lg">
+                            <img 
+                              src={product.thumbnail.replace('http://', 'https://')}
+                              alt={product.title}
+                              className="w-20 h-20 object-contain rounded"
+                            />
+                            <div className="flex-1">
+                              <h5 className="font-medium text-gray-800">{product.title}</h5>
+                              <p className="text-lg font-bold text-gray-900 mt-1">
+                                {formatPrice(product.price)}
+                              </p>
+                              <div className="flex items-center mt-2">
+                                <span className="text-sm text-gray-600 mr-4">
+                                  Stock: {product.available_quantity}
+                                </span>
+                                <span className="text-sm text-gray-600">
+                                  Vendidos: {product.sold_quantity}
+                                </span>
+                              </div>
+                            </div>
+                            <a 
+                              href={product.permalink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center text-blue-600 hover:text-blue-800"
+                            >
+                              <ExternalLink size={18} />
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-center text-gray-600 py-4">
+                        No se encontraron productos para esta tienda
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -290,7 +381,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
         <div className="bg-gray-50 p-4 rounded-lg">
           <h3 className="text-lg font-medium text-gray-800 mb-4">Top Vendedores</h3>
           <div className="space-y-3">
-            {analysis.topSellers.map((seller, index) => (
+            {analysis.topSellers.map((seller) => (
               <div key={seller.id} className="flex items-center justify-between bg-white p-3 rounded-lg shadow-sm">
                 <div>
                   <p className="font-medium text-gray-800">{seller.nickname}</p>
