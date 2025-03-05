@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useQuery } from 'react-query';
 import { BarChart3, Search, TrendingUp, Bell } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -8,7 +8,6 @@ import ProductDetail from './components/ProductDetail';
 import CategoryList from './components/CategoryList';
 import MarketInsights from './components/MarketInsights';
 import AuthButton from './components/AuthButton';
-import AuthCallback from './components/AuthCallback';
 import { 
   searchProducts, 
   getCategories, 
@@ -22,23 +21,6 @@ function App() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [activeTab, setActiveTab] = useState<'products' | 'insights'>('products');
-  const [isAuthCallback, setIsAuthCallback] = useState(false);
-
-  // Verificar si estamos en la página de callback de autenticación
-  useEffect(() => {
-    const path = window.location.pathname;
-    const isCallback = path === '/auth/callback' || window.location.search.includes('code=');
-    setIsAuthCallback(isCallback);
-    
-    if (isCallback) {
-      console.log('Detectada página de callback de autenticación');
-    }
-  }, []);
-
-  // Si estamos en la página de callback, mostrar el componente de callback
-  if (isAuthCallback) {
-    return <AuthCallback />;
-  }
 
   // Fetch categories
   const { 

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { exchangeCodeForToken } from '../services/auth';
 import { CheckCircle, AlertCircle, Loader } from 'lucide-react';
 
@@ -6,6 +7,7 @@ const AuthCallback: React.FC = () => {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(5);
+  const navigate = useNavigate();
 
   useEffect(() => {
     let isMounted = true;
@@ -16,8 +18,6 @@ const AuthCallback: React.FC = () => {
         // Obtener el código de la URL
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
-        
-        console.log('Código de autorización recibido:', code ? 'Sí (presente)' : 'No (ausente)');
         
         if (!code) {
           throw new Error('No se recibió el código de autorización');
@@ -42,7 +42,7 @@ const AuthCallback: React.FC = () => {
             
             if (count <= 0) {
               clearInterval(timer);
-              window.location.href = '/';
+              navigate('/', { replace: true });
             }
           }, 1000);
         }
@@ -62,7 +62,7 @@ const AuthCallback: React.FC = () => {
       isMounted = false;
       if (timer) clearInterval(timer);
     };
-  }, []);
+  }, [navigate]);
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -93,7 +93,7 @@ const AuthCallback: React.FC = () => {
               Serás redirigido a la página principal en <span className="font-bold">{countdown}</span> segundos...
             </div>
             <button 
-              onClick={() => window.location.href = '/'}
+              onClick={() => navigate('/', { replace: true })}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               Ir al inicio ahora
@@ -113,7 +113,7 @@ const AuthCallback: React.FC = () => {
             </div>
             <div className="space-y-3">
               <button 
-                onClick={() => window.location.href = '/'}
+                onClick={() => navigate('/', { replace: true })}
                 className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Volver al inicio

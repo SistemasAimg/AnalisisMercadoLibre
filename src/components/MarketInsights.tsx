@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import { BarChart3, DollarSign, TrendingUp, Users, AlertCircle } from 'lucide-react';
@@ -9,7 +9,16 @@ import { isAuthenticated } from '../services/auth';
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
 const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
-  const [showAuthAlert, setShowAuthAlert] = useState(!isAuthenticated());
+  // Use state to store authentication status instead of calling the function directly in render
+  const [isUserAuthenticated, setIsUserAuthenticated] = useState(false);
+  const [showAuthAlert, setShowAuthAlert] = useState(false);
+  
+  // Check authentication status on component mount and when dependencies change
+  useEffect(() => {
+    const authStatus = isAuthenticated();
+    setIsUserAuthenticated(authStatus);
+    setShowAuthAlert(!authStatus);
+  }, []);
   
   // Obtener análisis de mercado
   const { 
@@ -20,7 +29,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     ['marketAnalysis', searchQuery],
     () => getMarketAnalysis(searchQuery),
     {
-      enabled: !!searchQuery && isAuthenticated(),
+      enabled: !!searchQuery && isUserAuthenticated,
       staleTime: 1000 * 60 * 15, // 15 minutos
     }
   );
