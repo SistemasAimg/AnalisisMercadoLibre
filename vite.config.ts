@@ -15,4 +15,13 @@ export default defineConfig({
     // Configuración para manejar rutas en preview
     historyApiFallback: true,
   },
+  build: {
+    // Asegurarse de que los estilos CSS se incluyan en el bundle
+    cssCodeSplit: false,
+    rollupOptions: {
+      output: {
+        manualChunks: undefined
+      }
+    }
+  }
 });
