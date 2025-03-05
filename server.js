@@ -43,6 +43,32 @@ app.post('/api/auth/token', async (req, res) => {
   }
 });
 
+// Endpoint para refrescar token
+app.post('/api/auth/refresh', async (req, res) => {
+  try {
+    const { refresh_token } = req.body;
+    
+    if (!refresh_token) {
+      return res.status(400).json({ error: 'Refresh token requerido' });
+    }
+
+    const response = await axios.post('https://api.mercadolibre.com/oauth/token', {
+      grant_type: 'refresh_token',
+      client_id: process.env.VITE_ML_CLIENT_ID,
+      client_secret: process.env.VITE_ML_CLIENT_SECRET,
+      refresh_token
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al refrescar token:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al refrescar token',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
 // Proxy para la API de MercadoLibre
 app.get('/api/proxy/trends', async (req, res) => {
   try {
@@ -71,26 +97,60 @@ app.get('/api/proxy/categories', async (req, res) => {
     res.json(response.data);
   } catch (error) {
     console.error('Error al obtener categorías:', error.message);
-    res.status(500).json({ error: 'Error al obtener categorías' });
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener categorías',
+      details: error.response?.data || error.message
+    });
   }
 });
 
 // Proxy para búsqueda de productos
 app.get('/api/proxy/search', async (req, res) => {
   try {
-    const { q, category, limit, offset } = req.query;
-    const params = {};
+    const { q, category, limit = 50, offset = 0 } = req.query;
     
-    if (q) params.q = q;
-    if (category) params.category = category;
-    if (limit) params.limit = limit;
-    if (offset) params.offset = offset;
+    // Validar parámetros
+    if (!q && !category) {
+      return res.status(400).json({ 
+        error: 'Se requiere un término de búsqueda (q) o una categoría' 
+      });
+    }
+
+    // Construir URL base
+    const baseUrl = 'https://api.mercadolibre.com/sites/MLA/search';
     
-    const response = await axios.get('https://api.mercadolibre.com/sites/MLA/search', { params });
-    res.json(response.data);
+    // Construir parámetros
+    const params = new URLSearchParams();
+    if (q) params.append('q', q.toString());
+    if (category) params.append('category', category.toString());
+    params.append('limit', Math.min(200, Number(limit)).toString());
+    params.append('offset', offset.toString());
+
+    // Realizar la búsqueda
+    const response = await axios.get(`${baseUrl}?${params.toString()}`);
+
+    // Procesar y enviar respuesta
+    res.json({
+      results: response.data.results,
+      paging: {
+        total: response.data.paging.total,
+        offset: response.data.paging.offset,
+        limit: response.data.paging.limit
+      }
+    });
   } catch (error) {
     console.error('Error en búsqueda de productos:', error.message);
-    res.status(500).json({ error: 'Error en búsqueda de productos' });
+    if (error.response) {
+      res.status(error.response.status).json({
+        error: 'Error en búsqueda de productos',
+        details: error.response.data
+      });
+    } else {
+      res.status(500).json({ 
+        error: 'Error en búsqueda de productos',
+        message: error.message 
+      });
+    }
   }
 });
 
@@ -102,7 +162,10 @@ app.get('/api/proxy/items/:id', async (req, res) => {
     res.json(response.data);
   } catch (error) {
     console.error('Error al obtener detalles del producto:', error.message);
-    res.status(500).json({ error: 'Error al obtener detalles del producto' });
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener detalles del producto',
+      details: error.response?.data || error.message
+    });
   }
 });
 
