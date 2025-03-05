@@ -16,6 +16,33 @@ app.use(express.json());
 // Log para depuración
 console.log(`Iniciando servidor en ${HOST}:${PORT}`);
 
+// Endpoint para intercambio de código por token
+app.post('/api/auth/token', async (req, res) => {
+  try {
+    const { code } = req.body;
+    
+    if (!code) {
+      return res.status(400).json({ error: 'Código de autorización requerido' });
+    }
+
+    const response = await axios.post('https://api.mercadolibre.com/oauth/token', {
+      grant_type: 'authorization_code',
+      client_id: process.env.VITE_ML_CLIENT_ID,
+      client_secret: process.env.VITE_ML_CLIENT_SECRET,
+      code,
+      redirect_uri: process.env.VITE_ML_REDIRECT_URI
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener token:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener token',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
 // Proxy para la API de MercadoLibre
 app.get('/api/proxy/trends', async (req, res) => {
   try {

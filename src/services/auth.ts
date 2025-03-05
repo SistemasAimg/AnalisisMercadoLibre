@@ -3,7 +3,6 @@ import Cookies from 'js-cookie';
 
 // Constantes para la autenticación
 const CLIENT_ID = import.meta.env.VITE_ML_CLIENT_ID || '7074402608653029';
-const CLIENT_SECRET = import.meta.env.VITE_ML_CLIENT_SECRET || 'dRtfnoEZN47gvvDUassK1GdKBhUhteVP';
 const REDIRECT_URI = import.meta.env.VITE_ML_REDIRECT_URI || window.location.origin + '/auth/callback';
 const API_BASE_URL = 'https://api.mercadolibre.com';
 
@@ -32,7 +31,6 @@ export const getAuthUrl = (): string => {
     console.error('CLIENT_ID no está definido');
   }
   
-  console.log('Generando URL de autenticación con CLIENT_ID:', CLIENT_ID);
   return `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
 };
 
@@ -41,20 +39,7 @@ export const getAuthUrl = (): string => {
  */
 export const exchangeCodeForToken = async (code: string): Promise<AuthToken> => {
   try {
-    console.log('Intercambiando código por token...');
-    console.log('Redirect URI:', REDIRECT_URI);
-    console.log('Client ID:', CLIENT_ID);
-    
-    const response = await axios.post(`${API_BASE_URL}/oauth/token`, {
-      grant_type: 'authorization_code',
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      code,
-      redirect_uri: REDIRECT_URI,
-    });
-
-    console.log('Respuesta de token recibida:', response.status);
-    
+    const response = await axios.post('/api/auth/token', { code });
     const token = response.data;
     saveToken(token);
     return token;
@@ -82,13 +67,8 @@ export const refreshAccessToken = async (): Promise<AuthToken | null> => {
   }
 
   try {
-    console.log('Refrescando token...');
-    
-    const response = await axios.post(`${API_BASE_URL}/oauth/token`, {
-      grant_type: 'refresh_token',
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      refresh_token: refreshToken,
+    const response = await axios.post('/api/auth/refresh', {
+      refresh_token: refreshToken
     });
 
     const token = response.data;
@@ -114,8 +94,6 @@ export const saveToken = (token: AuthToken): void => {
   if (token.user_id) {
     Cookies.set(USER_ID_COOKIE, token.user_id.toString(), { expires: 60 });
   }
-  
-  console.log('Token guardado correctamente. Expira:', expiryDate);
 };
 
 /**
@@ -126,7 +104,6 @@ export const clearToken = (): void => {
   Cookies.remove(REFRESH_TOKEN_COOKIE);
   Cookies.remove(TOKEN_EXPIRY_COOKIE);
   Cookies.remove(USER_ID_COOKIE);
-  console.log('Tokens eliminados');
 };
 
 /**
@@ -138,13 +115,7 @@ export const isTokenExpired = (): boolean => {
   
   const expiry = new Date(expiryStr);
   const now = new Date();
-  const isExpired = now > expiry;
-  
-  if (isExpired) {
-    console.log('Token expirado');
-  }
-  
-  return isExpired;
+  return now > expiry;
 };
 
 /**
@@ -154,13 +125,10 @@ export const getAccessToken = async (): Promise<string | null> => {
   let token = Cookies.get(ACCESS_TOKEN_COOKIE);
   
   if (!token || isTokenExpired()) {
-    console.log('Token no disponible o expirado, intentando refrescar...');
     const newToken = await refreshAccessToken();
     if (newToken) {
       token = newToken.access_token;
-      console.log('Token refrescado correctamente');
     } else {
-      console.log('No se pudo refrescar el token');
       return null;
     }
   }
