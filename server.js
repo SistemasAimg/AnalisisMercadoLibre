@@ -121,10 +121,15 @@ app.get('/api/proxy/search', async (req, res) => {
     
     // Construir parámetros
     const params = new URLSearchParams();
-    if (q) params.append('q', q.toString());
-    if (category) params.append('category', category.toString());
-    params.append('limit', Math.min(200, Number(limit)).toString());
-    params.append('offset', offset.toString());
+    if (q) params.append('q', q);
+    if (category) params.append('category', category);
+    
+    // Asegurarse de que limit y offset sean números válidos
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit.toString()) || 50));
+    const offsetNum = Math.max(0, parseInt(offset.toString()) || 0);
+    
+    params.append('limit', limitNum.toString());
+    params.append('offset', offsetNum.toString());
 
     // Realizar la búsqueda
     const response = await axios.get(`${baseUrl}?${params.toString()}`);

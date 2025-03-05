@@ -209,11 +209,11 @@ export const getSellerItems = async (sellerId: number, limit = 50): Promise<Sear
   return response.data;
 };
 
-// Función para obtener análisis de mercado con datos reales
+// Función para obtener análisis de mercado
 export const getMarketAnalysis = async (query: string): Promise<MarketAnalysis> => {
   try {
-    // Obtener productos con un límite mayor para mejor análisis
-    const searchData = await searchProducts(query, 100);
+    // Obtener productos con un límite menor para evitar errores de rate limit
+    const searchData = await searchProducts(query, 50);
     
     if (!searchData.results.length) {
       throw new Error('No hay suficientes datos para realizar un análisis');
@@ -246,16 +246,6 @@ export const getMarketAnalysis = async (query: string): Promise<MarketAnalysis> 
     const topSellers = Array.from(uniqueSellers.values())
       .sort((a, b) => b.salesCount - a.salesCount)
       .slice(0, 5);
-
-    for (const seller of topSellers) {
-      try {
-        const sellerInfo = await getSellerInfo(seller.id);
-        seller.reputation = sellerInfo.seller_reputation.level_id;
-      } catch (error) {
-        console.error(`Error al obtener información del vendedor ${seller.id}:`, error);
-        seller.reputation = 'unknown';
-      }
-    }
 
     // Calcular distribución de precios
     const priceRanges = [
@@ -305,7 +295,7 @@ export const getMarketAnalysis = async (query: string): Promise<MarketAnalysis> 
     // Calcular tendencia de ventas
     const totalSales = searchData.results.reduce((sum, item) => sum + item.sold_quantity, 0);
     const averageSalesPerListing = totalSales / searchData.results.length;
-    const salesTrend = ((averageSalesPerListing - 5) / 5) * 100; // Comparación con promedio base de 5 ventas
+    const salesTrend = ((averageSalesPerListing - 5) / 5) * 100;
 
     // Determinar nivel de competencia
     let competitionLevel: 'low' | 'medium' | 'high' = 'low';
@@ -359,7 +349,7 @@ export const getMarketAnalysis = async (query: string): Promise<MarketAnalysis> 
         id: seller.id,
         nickname: seller.nickname,
         salesCount: seller.salesCount,
-        reputation: seller.reputation
+        reputation: 'N/A' // Simplificado para evitar demasiadas llamadas a la API
       })),
       priceDistribution,
       conditionBreakdown
