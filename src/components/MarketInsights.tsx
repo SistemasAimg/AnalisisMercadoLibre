@@ -1,13 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
-import { Line } from 'react-chartjs-2';
-import { BarChart3, DollarSign, TrendingUp, Users, AlertCircle, Store, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { useQuery } from 'react-query';
-import { getMarketAnalysis, searchProducts, Product } from '../services/api';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+} from 'chart.js';
+import { Line } from 'react-chartjs-2';
+import {
+  BarChart3,
+  DollarSign,
+  TrendingUp,
+  Users,
+  AlertCircle,
+  Store,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink
+} from 'lucide-react';
+
 import { isAuthenticated } from '../services/auth';
+import { 
+  getMarketAnalysis, 
+  searchProducts, 
+  Product 
+} from '../services/api'; 
+import ProductSelector from '../components/ProductSelector';    // Ajusta la ruta
+import DateRangePicker from '../components/DateRangePicker';    // Ajusta la ruta
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
+/**
+ * Para expansion de productos en cada tienda oficial
+ */
 interface StoreProducts {
   [storeId: number]: {
     isExpanded: boolean;
@@ -16,33 +45,89 @@ interface StoreProducts {
   };
 }
 
+/**
+ * Definimos el state para el rango de fechas
+ */
+interface DateRange {
+  start: Date;
+  end: Date;
+}
+
 const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
+  // Estado de si se filtra "solo tiendas oficiales"
   const [showOfficialStoresOnly, setShowOfficialStoresOnly] = useState(false);
+
+  // Autenticación
   const [isUserAuthenticated, setIsUserAuthenticated] = useState(false);
   const [showAuthAlert, setShowAuthAlert] = useState(false);
+
+  // Control de expansión por tienda oficial
   const [storeProducts, setStoreProducts] = useState<StoreProducts>({});
-  
+
+  // Producto seleccionado manualmente
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+
+  // Rango de fechas
+  const [dateRange, setDateRange] = useState<DateRange>(() => {
+    // Por ejemplo, últimos 6 meses
+    const end = new Date();
+    const start = new Date();
+    start.setMonth(start.getMonth() - 6);
+    return { start, end };
+  });
+
+  // 1) Comprobar autenticación al montar
   useEffect(() => {
     const authStatus = isAuthenticated();
     setIsUserAuthenticated(authStatus);
     setShowAuthAlert(!authStatus);
   }, []);
-  
-  const { 
-    data: analysis, 
-    isLoading, 
-    error 
+
+  // 2) Buscar productos (para el ProductSelector) basados en searchQuery
+  //    para que el usuario escoja el que realmente quiere analizar.
+  const {
+    data: searchData,
+    isLoading: isSearching
   } = useQuery(
-    ['marketAnalysis', searchQuery, showOfficialStoresOnly],
-    () => getMarketAnalysis(searchQuery, showOfficialStoresOnly),
+    ['searchProducts', searchQuery],
+    () => searchProducts(searchQuery),
     {
       enabled: !!searchQuery && isUserAuthenticated,
-      staleTime: 1000 * 60 * 15,
+      staleTime: 60_000
     }
   );
 
+  // 3) Llamar a getMarketAnalysis con el producto elegido + rango de fechas
+  const {
+    data: analysis,
+    isLoading: isAnalyzing,
+    error
+  } = useQuery(
+    ['marketAnalysis', selectedProduct?.id, dateRange, showOfficialStoresOnly],
+    () =>
+      selectedProduct
+        ? getMarketAnalysis(selectedProduct, dateRange, showOfficialStoresOnly)
+        : null,
+    {
+      enabled: !!selectedProduct && isUserAuthenticated,
+      staleTime: 1000 * 60 * 15
+    }
+  );
+
+  const isLoadingData = isSearching || isAnalyzing;
+
+  /**
+   * Manejo del toggle "solo tiendas oficiales"
+   */
+  const handleOfficialStoresToggle = (checked: boolean) => {
+    setShowOfficialStoresOnly(checked);
+  };
+
+  /**
+   * Al expandir/cerrar una tienda oficial
+   */
   const toggleStoreProducts = async (storeId: number) => {
-    setStoreProducts(prev => ({
+    setStoreProducts((prev) => ({
       ...prev,
       [storeId]: {
         isExpanded: !prev[storeId]?.isExpanded,
@@ -51,24 +136,26 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
       }
     }));
 
+    // Solo buscar si no hay productos en cache
     if (!storeProducts[storeId]?.products.length) {
       try {
+        // Nota: esto llama con 'searchQuery', pero
+        // en realidad quizá querrías filtrar la misma categoría
+        // o algo distinto. Ajusta a tu necesidad.
         const response = await searchProducts(searchQuery, 50, 0, true);
-        const storeProducts = response.results.filter(
-          product => product.official_store_id === storeId
-        );
+        const prods = response.results.filter((p) => p.official_store_id === storeId);
 
-        setStoreProducts(prev => ({
+        setStoreProducts((prev) => ({
           ...prev,
           [storeId]: {
             isExpanded: true,
-            products: storeProducts,
+            products: prods,
             isLoading: false
           }
         }));
       } catch (error) {
         console.error('Error al obtener productos de la tienda:', error);
-        setStoreProducts(prev => ({
+        setStoreProducts((prev) => ({
           ...prev,
           [storeId]: {
             isExpanded: false,
@@ -80,66 +167,79 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     }
   };
 
-  const priceData = {
-    labels: analysis?.priceHistory.map(item => item.date) || [],
+  /**
+   * Preparar datos para el gráfico
+   * Se asume analysis.priceHistory = { date, price, sales }
+   */
+  const chartData = {
+    labels: analysis?.priceHistory.map((item) => item.date) || [],
     datasets: [
       {
-        label: 'Precio promedio',
-        data: analysis?.priceHistory.map(item => item.price) || [],
+        label: 'Precio (ARS)',
+        data: analysis?.priceHistory.map((item) => item.price) || [],
         borderColor: 'rgb(53, 162, 235)',
-        backgroundColor: 'rgba(53, 162, 235, 0.5)',
+        backgroundColor: 'rgba(53, 162, 235, 0.5)'
       },
-    ],
+      {
+        label: 'Ventas (unidades)',
+        data: analysis?.priceHistory.map((item) => item.sales) || [],
+        borderColor: 'rgb(75, 192, 192)',
+        backgroundColor: 'rgba(75, 192, 192, 0.5)'
+      }
+    ]
   };
 
-  const options = {
+  const chartOptions = {
     responsive: true,
     plugins: {
       legend: {
-        position: 'top' as const,
-      },
+        position: 'top' as const
+      }
     },
+    scales: {
+      // Ejemplo: dual axis, etc. Ajusta a tu gusto.
+      y: {
+        beginAtZero: false
+      }
+    }
   };
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('es-AR', {
+  // Format helpers
+  const formatPrice = (price: number) =>
+    new Intl.NumberFormat('es-AR', {
       style: 'currency',
-      currency: 'ARS',
+      currency: 'ARS'
     }).format(price);
-  };
 
-  const getTrendClass = (value: number) => {
-    return value >= 0 ? 'text-green-600' : 'text-red-600';
-  };
+  const getTrendClass = (value: number) => (value >= 0 ? 'text-green-600' : 'text-red-600');
 
   const formatPercent = (value: number) => {
     const sign = value >= 0 ? '+' : '';
     return `${sign}${value.toFixed(1)}%`;
   };
 
+  // 1) Si no hay searchQuery, pedir que busque.
   if (!searchQuery) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
         <div className="flex items-center mb-6">
           <BarChart3 size={24} className="text-blue-600 mr-2" />
-          <h2 className="text-xl font-bold text-gray-800">
-            Análisis de mercado
-          </h2>
+          <h2 className="text-xl font-bold text-gray-800">Análisis de mercado</h2>
         </div>
-        
         <div className="text-center py-12">
           <TrendingUp size={48} className="mx-auto text-gray-400 mb-4" />
           <h3 className="text-xl font-medium text-gray-800 mb-2">
             Realiza una búsqueda para ver análisis
           </h3>
           <p className="text-gray-600">
-            Busca productos o selecciona una categoría para obtener análisis detallados del mercado.
+            Utiliza la barra de búsqueda para seleccionar un producto y ver su análisis.
           </p>
         </div>
       </div>
     );
   }
 
+  // 2) Si el usuario no está logueado
   if (showAuthAlert) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -149,18 +249,18 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             Análisis de mercado: {searchQuery}
           </h2>
         </div>
-        
+
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
           <div className="flex items-start">
             <AlertCircle size={24} className="text-yellow-500 mr-3 mt-0.5" />
             <div>
               <h3 className="text-lg font-medium text-yellow-800">Autenticación requerida</h3>
               <p className="text-yellow-700 mt-1">
-                Para acceder a análisis de mercado avanzados, necesitas iniciar sesión con tu cuenta de MercadoLibre.
+                Debes iniciar sesión con tu cuenta de MercadoLibre para ver los detalles.
               </p>
-              <button 
+              <button
                 className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                onClick={() => window.location.href = '/auth'}
+                onClick={() => (window.location.href = '/auth')}
               >
                 Iniciar sesión
               </button>
@@ -171,7 +271,8 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
-  if (isLoading) {
+  // 3) Cargando
+  if (isLoadingData) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
         <div className="flex items-center mb-6">
@@ -180,7 +281,6 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             Análisis de mercado: {searchQuery}
           </h2>
         </div>
-        
         <div className="flex justify-center items-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
@@ -188,23 +288,63 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
+  // 4) Seleccionar producto de la lista si no hay un selectedProduct
+  if (!selectedProduct) {
+    return (
+      <div className="bg-white rounded-lg shadow-lg p-6 space-y-6">
+        <div className="flex items-center mb-4">
+          <BarChart3 size={24} className="text-blue-600 mr-2" />
+          <h2 className="text-xl font-bold text-gray-800">
+            Seleccionar producto para Análisis
+          </h2>
+        </div>
+        {/* date range picker */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Rango de fechas</label>
+          <DateRangePicker
+            startDate={dateRange.start}
+            endDate={dateRange.end}
+            onChange={([start, end]) => {
+              if (start && end) {
+                setDateRange({ start, end });
+              }
+            }}
+          />
+        </div>
+        {/* Listado de productos en searchData */}
+        {searchData?.results?.length ? (
+          <ProductSelector
+            products={searchData.results}
+            selectedProduct={null}
+            onSelectProduct={(p) => setSelectedProduct(p)}
+          />
+        ) : (
+          <p className="text-gray-700">
+            No hay resultados para <strong>{searchQuery}</strong> o no has iniciado sesión.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // 5) Si hay un selectedProduct, ya podemos mostrar la UI final
+  //    con la date range, y el analysis devuelto por getMarketAnalysis
   if (error || !analysis) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
         <div className="flex items-center mb-6">
           <BarChart3 size={24} className="text-blue-600 mr-2" />
           <h2 className="text-xl font-bold text-gray-800">
-            Análisis de mercado: {searchQuery}
+            Análisis de mercado: {selectedProduct.title}
           </h2>
         </div>
-        
         <div className="bg-red-50 border-l-4 border-red-400 p-4">
           <div className="flex">
             <AlertCircle size={24} className="text-red-500 mr-3" />
             <div>
               <h3 className="text-lg font-medium text-red-800">Error al obtener análisis</h3>
               <p className="text-red-700 mt-1">
-                No pudimos obtener el análisis de mercado para esta búsqueda. Por favor, intenta con otra búsqueda o más tarde.
+                Ocurrió un problema analizando el producto seleccionado.
               </p>
             </div>
           </div>
@@ -213,31 +353,58 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
+  // 6) “Vista de Análisis”: 
   return (
     <div className="bg-white rounded-lg shadow-lg p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center">
-          <BarChart3 size={24} className="text-blue-600 mr-2" />
-          <h2 className="text-xl font-bold text-gray-800">
-            Análisis de mercado: {searchQuery}
-          </h2>
+      {/* Encabezado con date range y toggle tiendas oficiales */}
+      <div className="flex flex-col md:flex-row items-center justify-between mb-6 space-y-4 md:space-y-0">
+        <div>
+          <div className="flex items-center">
+            <BarChart3 size={24} className="text-blue-600 mr-2" />
+            <h2 className="text-xl font-bold text-gray-800">
+              Análisis de mercado: {selectedProduct.title}
+            </h2>
+          </div>
+          <p className="text-sm text-gray-600 ml-8 mt-1">
+            ID: {selectedProduct.id}
+          </p>
         </div>
-        <div className="flex items-center">
+        <div className="flex items-center space-x-4">
+          {/* Botón para cambiar el rango de fechas */}
+          <DateRangePicker
+            startDate={dateRange.start}
+            endDate={dateRange.end}
+            onChange={([start, end]) => {
+              if (start && end) {
+                setDateRange({ start, end });
+              }
+            }}
+          />
+          {/* Toggle solo tiendas oficiales */}
           <label className="inline-flex items-center cursor-pointer">
             <input
               type="checkbox"
               checked={showOfficialStoresOnly}
-              onChange={(e) => setShowOfficialStoresOnly(e.target.checked)}
+              onChange={(e) => handleOfficialStoresToggle(e.target.checked)}
               className="sr-only peer"
             />
-            <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            <span className="ms-3 text-sm font-medium text-gray-700">
-              Solo Tiendas Oficiales
+            <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none 
+               peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer 
+               peer-checked:after:translate-x-full
+               rtl:peer-checked:after:-translate-x-full 
+               peer-checked:after:border-white after:content-[''] after:absolute 
+               after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300
+               after:border after:rounded-full after:h-5 after:w-5 after:transition-all 
+               peer-checked:bg-blue-600"
+            />
+            <span className="ml-3 text-sm font-medium text-gray-700">
+              Solo Oficiales
             </span>
           </label>
         </div>
       </div>
 
+      {/* Métricas principales */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <div className="bg-gray-50 p-4 rounded-lg">
           <div className="flex items-center mb-2">
@@ -246,7 +413,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
           </div>
           <p className="text-2xl font-bold text-gray-900">{formatPrice(analysis.averagePrice)}</p>
           <p className={`text-sm ${getTrendClass(analysis.salesTrend)}`}>
-            {formatPercent(analysis.salesTrend)} vs. mes anterior
+            {formatPercent(analysis.salesTrend)} vs. periodo anterior
           </p>
         </div>
         <div className="bg-gray-50 p-4 rounded-lg">
@@ -266,19 +433,24 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
           </div>
           <p className="text-2xl font-bold text-gray-900">{analysis.totalSellers}</p>
           <p className="text-sm text-gray-600">
-            Competencia: {analysis.competitionLevel === 'high' ? 'Alta' : 
-                         analysis.competitionLevel === 'medium' ? 'Media' : 'Baja'}
+            Competencia:{' '}
+            {analysis.competitionLevel === 'high'
+              ? 'Alta'
+              : analysis.competitionLevel === 'medium'
+              ? 'Media'
+              : 'Baja'}
           </p>
         </div>
       </div>
 
+      {/* Tiendas oficiales expandibles */}
       {analysis.officialStores.total > 0 && (
         <div className="bg-gray-50 p-4 rounded-lg mb-6">
           <h3 className="text-lg font-medium text-gray-800 mb-4">Tiendas Oficiales</h3>
           <div className="space-y-4">
-            {analysis.officialStores.stores.map(store => (
+            {analysis.officialStores.stores.map((store) => (
               <div key={store.id} className="bg-white p-4 rounded-lg shadow-sm">
-                <button 
+                <button
                   onClick={() => toggleStoreProducts(store.id)}
                   className="w-full flex items-center justify-between"
                 >
@@ -287,7 +459,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
                     <div className="text-sm text-gray-600 mt-1">
                       <span>{store.productsCount} productos</span>
                       <span className="mx-2">•</span>
-                      <span>Precio promedio: {formatPrice(store.averagePrice)}</span>
+                      <span>Promedio: {formatPrice(store.averagePrice)}</span>
                     </div>
                   </div>
                   {storeProducts[store.id]?.isExpanded ? (
@@ -296,7 +468,6 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
                     <ChevronDown size={20} className="text-gray-500" />
                   )}
                 </button>
-
                 {storeProducts[store.id]?.isExpanded && (
                   <div className="mt-4 border-t pt-4">
                     {storeProducts[store.id]?.isLoading ? (
@@ -305,9 +476,12 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
                       </div>
                     ) : storeProducts[store.id]?.products.length > 0 ? (
                       <div className="space-y-4">
-                        {storeProducts[store.id].products.map(product => (
-                          <div key={product.id} className="flex items-start space-x-4 p-2 hover:bg-gray-50 rounded-lg">
-                            <img 
+                        {storeProducts[store.id].products.map((product) => (
+                          <div
+                            key={product.id}
+                            className="flex items-start space-x-4 p-2 hover:bg-gray-50 rounded-lg"
+                          >
+                            <img
                               src={product.thumbnail.replace('http://', 'https://')}
                               alt={product.title}
                               className="w-20 h-20 object-contain rounded"
@@ -317,16 +491,12 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
                               <p className="text-lg font-bold text-gray-900 mt-1">
                                 {formatPrice(product.price)}
                               </p>
-                              <div className="flex items-center mt-2">
-                                <span className="text-sm text-gray-600 mr-4">
-                                  Stock: {product.available_quantity}
-                                </span>
-                                <span className="text-sm text-gray-600">
-                                  Vendidos: {product.sold_quantity}
-                                </span>
+                              <div className="flex items-center mt-2 text-sm text-gray-600">
+                                <span className="mr-4">Stock: {product.available_quantity}</span>
+                                <span>Vendidos: {product.sold_quantity}</span>
                               </div>
                             </div>
-                            <a 
+                            <a
                               href={product.permalink}
                               target="_blank"
                               rel="noopener noreferrer"
@@ -350,19 +520,24 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
         </div>
       )}
 
+      {/* Gráfico (precio vs. ventas) */}
       <div className="mb-8">
         <div className="bg-gray-50 p-4 rounded-lg">
-          <h3 className="text-lg font-medium text-gray-800 mb-4">Tendencia de precios</h3>
-          <Line options={options} data={priceData} />
+          <h3 className="text-lg font-medium text-gray-800 mb-4">
+            Evolución de precio y ventas
+          </h3>
+          <Line data={chartData} options={chartOptions} />
         </div>
       </div>
 
+      {/* Sección de “Distribución de precios” y “Top vendedores” */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        {/* Distribución de precios */}
         <div className="bg-gray-50 p-4 rounded-lg">
           <h3 className="text-lg font-medium text-gray-800 mb-4">Distribución de precios</h3>
           <div className="space-y-4">
-            {analysis.priceDistribution.map((range, index) => (
-              <div key={index} className="space-y-1">
+            {analysis.priceDistribution.map((range, idx) => (
+              <div key={idx} className="space-y-1">
                 <div className="flex justify-between text-sm text-gray-600">
                   <span>{range.range}</span>
                   <span>{range.count} productos</span>
@@ -377,12 +552,15 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             ))}
           </div>
         </div>
-
+        {/* Top vendedores */}
         <div className="bg-gray-50 p-4 rounded-lg">
           <h3 className="text-lg font-medium text-gray-800 mb-4">Top Vendedores</h3>
           <div className="space-y-3">
             {analysis.topSellers.map((seller) => (
-              <div key={seller.id} className="flex items-center justify-between bg-white p-3 rounded-lg shadow-sm">
+              <div
+                key={seller.id}
+                className="flex items-center justify-between bg-white p-3 rounded-lg shadow-sm"
+              >
                 <div>
                   <p className="font-medium text-gray-800">{seller.nickname}</p>
                   <p className="text-sm text-gray-600">Ventas: {seller.salesCount}</p>
@@ -398,13 +576,14 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
         </div>
       </div>
 
+      {/* Recomendaciones */}
       <div className="bg-gray-50 p-4 rounded-lg">
         <h3 className="text-lg font-medium text-gray-800 mb-4">Recomendaciones</h3>
         <ul className="space-y-2 text-gray-700">
-          {analysis.recommendations.map((recommendation, index) => (
-            <li key={index} className="flex items-start">
+          {analysis.recommendations.map((rec, idx) => (
+            <li key={idx} className="flex items-start">
               <span className="inline-block w-2 h-2 bg-blue-500 rounded-full mt-2 mr-2"></span>
-              {recommendation}
+              {rec}
             </li>
           ))}
         </ul>
