@@ -1,36 +1,24 @@
 import axios from 'axios';
 import { getAccessToken } from './auth';
 
-interface AnalysisFilters {
-  excludeKeywords: string[];
-  onlyKeywords: string[];
-  dateRange?: {
-    from: string;
-    to: string;
-  };
-  brand?: string;
-}
-
 const API_BASE_URL = 'https://api.mercadolibre.com';
 const PROXY_BASE_URL = '/api/proxy';
 
+// Crear una instancia de axios con configuración base
 const api = axios.create({
   baseURL: API_BASE_URL,
 });
 
 // Interceptor para añadir el token de acceso a las peticiones
-api.interceptors.request.use(
-  async (config) => {
-    const token = await getAccessToken();
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
+api.interceptors.request.use(async (config) => {
+  const token = await getAccessToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
-);
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
 
 export interface Product {
   id: string;
@@ -119,9 +107,7 @@ export interface MarketAnalysis {
   }[];
 }
 
-/*
-  Obtener categorías
-*/
+// Función para obtener categorías
 export const getCategories = async (): Promise<Category[]> => {
   try {
     const response = await axios.get(`${PROXY_BASE_URL}/categories`);
@@ -132,9 +118,7 @@ export const getCategories = async (): Promise<Category[]> => {
   }
 };
 
-/*
-  Obtener tendencias
-*/
+// Función para obtener tendencias
 export const getTrends = async (): Promise<Trend[]> => {
   try {
     const response = await axios.get(`${PROXY_BASE_URL}/trends`);
@@ -145,18 +129,14 @@ export const getTrends = async (): Promise<Trend[]> => {
   }
 };
 
-/*
-  searchProducts con filtros y limit=50
-*/
+// Función para buscar productos incluyendo filtro de tiendas oficiales
 export const searchProducts = async (
-  query: string,
-  limit = 50,
+  query: string, 
+  limit = 50, 
   offset = 0,
-  officialStoresOnly = false,
-  filters?: AnalysisFilters
+  officialStoresOnly = false
 ): Promise<SearchResponse> => {
   try {
-    // Parámetros para el proxy
     const params = new URLSearchParams({
       q: query,
       limit: limit.toString(),
@@ -168,56 +148,14 @@ export const searchProducts = async (
     }
 
     const response = await axios.get(`${PROXY_BASE_URL}/search`, { params });
-    let data: SearchResponse = response.data;
-
-    // 1) Filtrar por brand
-    if (filters?.brand) {
-      data.results = data.results.filter((prod) =>
-        prod.title.toLowerCase().includes(filters.brand!.toLowerCase())
-      );
-    }
-
-    // 2) Excluir keywords
-    if (filters?.excludeKeywords?.length) {
-      data.results = data.results.filter((prod) => {
-        return !filters.excludeKeywords.some((kw) =>
-          prod.title.toLowerCase().includes(kw.toLowerCase())
-        );
-      });
-    }
-
-    // 3) Incluir solo keywords (todas deben coincidir)
-    if (filters?.onlyKeywords?.length) {
-      data.results = data.results.filter((prod) => {
-        return filters.onlyKeywords.every((kw) =>
-          prod.title.toLowerCase().includes(kw.toLowerCase())
-        );
-      });
-    }
-
-    // 4) Date range (Ejemplo simulado, dado que la API actual no soporta fecha histórica)
-    if (filters?.dateRange) {
-      // data.results = data.results.filter(...)
-      // Ajusta según la implementación real o simulada
-    }
-
-    // Ajustar el total si hay menos por filtros
-    return {
-      ...data,
-      paging: {
-        ...data.paging,
-        total: data.results.length,
-      }
-    };
+    return response.data;
   } catch (error) {
     console.error('Error en búsqueda de productos:', error);
     throw error;
   }
 };
 
-/*
-  Obtener productos por categoría
-*/
+// Función para obtener productos por categoría
 export const getProductsByCategory = async (
   categoryId: string,
   limit = 50,
@@ -238,9 +176,7 @@ export const getProductsByCategory = async (
   }
 };
 
-/*
-  Obtener detalles de un producto
-*/
+// Función para obtener detalles de un producto
 export const getProductDetails = async (productId: string): Promise<Product> => {
   try {
     const response = await axios.get(`${PROXY_BASE_URL}/items/${productId}`);
@@ -251,18 +187,15 @@ export const getProductDetails = async (productId: string): Promise<Product> => 
   }
 };
 
-/*
-  getMarketAnalysis que recibe filters y officialStoresOnly
-*/
+// Función para obtener análisis de mercado con foco en tiendas oficiales
 export const getMarketAnalysis = async (
-  query: string,
-  officialStoresOnly = false,
-  filters?: AnalysisFilters
+  query: string, 
+  officialStoresOnly = false
 ): Promise<MarketAnalysis> => {
   try {
-    // Limit a 50
-    const searchData = await searchProducts(query, 50, 0, officialStoresOnly, filters);
-
+    // Obtener productos con un límite menor para evitar errores de rate limit
+    const searchData = await searchProducts(query, 50, 0, officialStoresOnly);
+    
     if (!searchData.results.length) {
       throw new Error('No hay suficientes datos para realizar un análisis');
     }
@@ -297,7 +230,7 @@ export const getMarketAnalysis = async (
 
     const officialStores = {
       total: officialStoresMap.size,
-      stores: Array.from(officialStoresMap.values()).map((store: any) => ({
+      stores: Array.from(officialStoresMap.values()).map(store => ({
         id: store.id,
         name: store.name,
         productsCount: store.products.length,
@@ -306,7 +239,7 @@ export const getMarketAnalysis = async (
       percentage: (officialStoresMap.size / searchData.results.length) * 100
     };
 
-    // Obtener vendedores únicos
+    // Obtener vendedores únicos y sus detalles
     const uniqueSellers = new Map();
     for (const item of searchData.results) {
       if (!uniqueSellers.has(item.seller.id)) {
@@ -324,11 +257,11 @@ export const getMarketAnalysis = async (
       }
     }
 
-    // Top vendedores
+    // Obtener top vendedores
     const topSellers = Array.from(uniqueSellers.values())
-      .sort((a: any, b: any) => b.salesCount - a.salesCount)
+      .sort((a, b) => b.salesCount - a.salesCount)
       .slice(0, 5)
-      .map((seller: any) => ({
+      .map(seller => ({
         id: seller.id,
         nickname: seller.nickname,
         salesCount: seller.salesCount,
@@ -336,7 +269,7 @@ export const getMarketAnalysis = async (
         isOfficialStore: seller.isOfficialStore
       }));
 
-    // Historial de precios simulado
+    // Generar historial de precios simulado
     const priceHistory: PriceHistory[] = [];
     const today = new Date();
     for (let i = 5; i >= 0; i--) {
@@ -349,15 +282,15 @@ export const getMarketAnalysis = async (
       });
     }
 
-    // Tendencia de ventas (simulada)
+    // Calcular tendencia de ventas
     const salesTrend = Math.random() * 30 - 5;
 
-    // Nivel de competencia
+    // Determinar nivel de competencia
     let competitionLevel: 'low' | 'medium' | 'high' = 'low';
     if (uniqueSellers.size > 50) competitionLevel = 'high';
     else if (uniqueSellers.size > 20) competitionLevel = 'medium';
 
-    // Distribución de precios
+    // Generar distribución de precios
     const priceRanges = [
       { min: minPrice, max: minPrice + (maxPrice - minPrice) * 0.33 },
       { min: minPrice + (maxPrice - minPrice) * 0.33, max: minPrice + (maxPrice - minPrice) * 0.66 },
@@ -373,11 +306,11 @@ export const getMarketAnalysis = async (
       };
     });
 
-    // Condición de productos
+    // Analizar condiciones de productos
     const conditions = new Map();
     searchData.results.forEach(product => {
-      const prevCount = conditions.get(product.condition) || 0;
-      conditions.set(product.condition, prevCount + 1);
+      const count = conditions.get(product.condition) || 0;
+      conditions.set(product.condition, count + 1);
     });
 
     const conditionBreakdown = Array.from(conditions.entries()).map(([condition, count]) => ({
@@ -386,8 +319,9 @@ export const getMarketAnalysis = async (
       percentage: (count as number / searchData.results.length) * 100
     }));
 
-    // Recomendaciones
+    // Generar recomendaciones
     const recommendations = [];
+    
     if (officialStores.total > 0) {
       recommendations.push(
         `Hay ${officialStores.total} tiendas oficiales en este mercado. ` +
