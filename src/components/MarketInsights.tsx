@@ -1,13 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { BarChart3, DollarSign, TrendingUp, Users, AlertCircle, Store, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { 
+  BarChart3, 
+  DollarSign, 
+  TrendingUp, 
+  Users, 
+  AlertCircle, 
+  Store, 
+  ChevronDown, 
+  ChevronUp, 
+  ExternalLink,
+  Filter,
+  Calendar,
+  Sliders
+} from 'lucide-react';
 import { useQuery } from 'react-query';
 import { getMarketAnalysis, searchProducts, Product } from '../services/api';
 import { isAuthenticated } from '../services/auth';
 
+/* 
+  Registro de componentes de Chart.js
+*/
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
+/*
+  Interfaz para manejar los productos de cada tienda (como antes).
+*/
 interface StoreProducts {
   [storeId: number]: {
     isExpanded: boolean;
@@ -16,31 +35,71 @@ interface StoreProducts {
   };
 }
 
+/*
+  Nueva interfaz de filtros y rangos de fecha para la búsqueda/análisis.
+*/
+interface AnalysisFilters {
+  excludeKeywords: string[];    // Palabras clave a excluir
+  onlyKeywords: string[];       // Palabras clave obligatorias
+  dateRange?: {
+    from: string; // Fecha de inicio
+    to: string;   // Fecha de fin
+  };
+  brand?: string; // Por ejemplo, "Garmin" o "Tacx" o "Garmin Argentina"
+}
+
 const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
+  /*
+    Nuevos estados:
+    - showFilters: para mostrar/ocultar panel de filtros
+    - filters: objeto que contiene las condiciones de filtrado
+  */
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<AnalysisFilters>({
+    excludeKeywords: [],
+    onlyKeywords: [],
+    dateRange: undefined,
+    brand: 'Garmin'  // o "Garmin Argentina"
+  });
+
   const [showOfficialStoresOnly, setShowOfficialStoresOnly] = useState(false);
   const [isUserAuthenticated, setIsUserAuthenticated] = useState(false);
   const [showAuthAlert, setShowAuthAlert] = useState(false);
   const [storeProducts, setStoreProducts] = useState<StoreProducts>({});
-  
+
+  /*
+    Efecto para chequear autenticación
+  */
   useEffect(() => {
     const authStatus = isAuthenticated();
     setIsUserAuthenticated(authStatus);
     setShowAuthAlert(!authStatus);
   }, []);
-  
+
+  /*
+    Llamada principal de React Query para análisis de mercado
+    - He modificado la función getMarketAnalysis para incluirle los filters 
+      como segundo parámetro. (Necesitarás ajustar getMarketAnalysis en tu archivo api.ts 
+      para que acepte y maneje el nuevo objeto filters).
+    - showOfficialStoresOnly también se pasa para indicar si queremos filtrar 
+      únicamente tiendas oficiales.
+  */
   const { 
     data: analysis, 
     isLoading, 
     error 
   } = useQuery(
-    ['marketAnalysis', searchQuery, showOfficialStoresOnly],
-    () => getMarketAnalysis(searchQuery, showOfficialStoresOnly),
+    ['marketAnalysis', searchQuery, showOfficialStoresOnly, filters],
+    () => getMarketAnalysis(searchQuery, showOfficialStoresOnly, filters),
     {
       enabled: !!searchQuery && isUserAuthenticated,
       staleTime: 1000 * 60 * 15,
     }
   );
 
+  /*
+    Función para alternar productos de tienda oficial
+  */
   const toggleStoreProducts = async (storeId: number) => {
     setStoreProducts(prev => ({
       ...prev,
@@ -51,10 +110,14 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
       }
     }));
 
+    /*
+      Nota: si no hay productos cargados antes, se hace la búsqueda.
+      Asegúrate de modificar searchProducts() para que respete filters o brand, si lo deseas.
+    */
     if (!storeProducts[storeId]?.products.length) {
       try {
-        const response = await searchProducts(searchQuery, 50, 0, true);
-        const storeProducts = response.results.filter(
+        const response = await searchProducts(searchQuery, 50, 0, true); 
+        const storeProductsList = response.results.filter(
           product => product.official_store_id === storeId
         );
 
@@ -62,7 +125,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
           ...prev,
           [storeId]: {
             isExpanded: true,
-            products: storeProducts,
+            products: storeProductsList,
             isLoading: false
           }
         }));
@@ -80,6 +143,9 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     }
   };
 
+  /* 
+    Data para el gráfico de precios en el tiempo
+  */
   const priceData = {
     labels: analysis?.priceHistory.map(item => item.date) || [],
     datasets: [
@@ -101,6 +167,9 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     },
   };
 
+  /* 
+    Funciones auxiliares de formato, mismas que tenías antes
+  */
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('es-AR', {
       style: 'currency',
@@ -117,6 +186,27 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     return `${sign}${value.toFixed(1)}%`;
   };
 
+  /*
+    Panel de Filtros:
+    - excludeKeywords
+    - onlyKeywords
+    - dateRange (from, to)
+    - brand
+  */
+  const handleToggleFilters = () => {
+    setShowFilters(!showFilters);
+  };
+
+  const handleFilterChange = (field: keyof AnalysisFilters, value: any) => {
+    setFilters(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  /*
+    HTML principal
+  */
   if (!searchQuery) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -213,8 +303,12 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
+  /*
+    HTML principal de resultados
+  */
   return (
     <div className="bg-white rounded-lg shadow-lg p-6">
+      {/* Encabezado con botón de Filtros */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center">
           <BarChart3 size={24} className="text-blue-600 mr-2" />
@@ -222,7 +316,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             Análisis de mercado: {searchQuery}
           </h2>
         </div>
-        <div className="flex items-center">
+        <div className="flex items-center space-x-3">
           <label className="inline-flex items-center cursor-pointer">
             <input
               type="checkbox"
@@ -232,12 +326,102 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             />
             <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
             <span className="ms-3 text-sm font-medium text-gray-700">
-              Solo Tiendas Oficiales
+              Solo Oficiales
             </span>
           </label>
+
+          {/* Botón para mostrar/ocultar el panel de filtros */}
+          <button
+            onClick={handleToggleFilters}
+            className="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            <Filter size={18} className="mr-2" />
+            Filtros
+          </button>
         </div>
       </div>
 
+      {/* Panel de Filtros */}
+      {showFilters && (
+        <div className="bg-gray-50 rounded-lg p-4 mb-6 border border-gray-200">
+          <h3 className="text-md font-medium text-gray-800 mb-4 flex items-center">
+            <Sliders size={18} className="mr-2" /> Configurar filtros
+          </h3>
+          
+          {/* Marca / Brand */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Marca principal</label>
+            <input
+              type="text"
+              value={filters.brand || ''}
+              onChange={(e) => handleFilterChange('brand', e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 w-full"
+              placeholder="Ej: Garmin, Tacx, etc."
+            />
+          </div>
+          
+          {/* Exclude Keywords */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Excluir palabras clave</label>
+            <textarea
+              value={filters.excludeKeywords.join(', ')}
+              onChange={(e) => handleFilterChange('excludeKeywords', e.target.value.split(',').map(s => s.trim()))}
+              className="border border-gray-300 rounded-lg px-3 py-2 w-full h-16 resize-none"
+              placeholder="Ingresa palabras separadas por coma, ej: repuesto, fundas"
+            />
+          </div>
+
+          {/* Only Keywords */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Incluir solo palabras clave</label>
+            <textarea
+              value={filters.onlyKeywords.join(', ')}
+              onChange={(e) => handleFilterChange('onlyKeywords', e.target.value.split(',').map(s => s.trim()))}
+              className="border border-gray-300 rounded-lg px-3 py-2 w-full h-16 resize-none"
+              placeholder="Ingresa palabras separadas por coma, ej: 'neo bike'"
+            />
+          </div>
+
+          {/* Date Range */}
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                <Calendar size={16} className="mr-1" /> Desde
+              </label>
+              <input
+                type="date"
+                value={filters.dateRange?.from || ''}
+                onChange={(e) => handleFilterChange('dateRange', { 
+                  ...(filters.dateRange || {}), 
+                  from: e.target.value 
+                })}
+                className="border border-gray-300 rounded-lg px-3 py-2 w-full"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                <Calendar size={16} className="mr-1" /> Hasta
+              </label>
+              <input
+                type="date"
+                value={filters.dateRange?.to || ''}
+                onChange={(e) => handleFilterChange('dateRange', { 
+                  ...(filters.dateRange || {}), 
+                  to: e.target.value 
+                })}
+                className="border border-gray-300 rounded-lg px-3 py-2 w-full"
+              />
+            </div>
+          </div>
+
+          {/* Instrucción breve */}
+          <p className="text-sm text-gray-500">
+            Estos filtros afectarán la próxima recarga del análisis. Si cambias algo, se hará una nueva consulta.
+          </p>
+        </div>
+      )}
+
+      {/* Sección de datos una vez que analysis está disponible */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <div className="bg-gray-50 p-4 rounded-lg">
           <div className="flex items-center mb-2">
@@ -350,6 +534,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
         </div>
       )}
 
+      {/* Gráfico de precios en el tiempo */}
       <div className="mb-8">
         <div className="bg-gray-50 p-4 rounded-lg">
           <h3 className="text-lg font-medium text-gray-800 mb-4">Tendencia de precios</h3>
@@ -357,6 +542,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
         </div>
       </div>
 
+      {/* Distribución de precios y top sellers */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div className="bg-gray-50 p-4 rounded-lg">
           <h3 className="text-lg font-medium text-gray-800 mb-4">Distribución de precios</h3>
@@ -398,6 +584,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
         </div>
       </div>
 
+      {/* Recomendaciones */}
       <div className="bg-gray-50 p-4 rounded-lg">
         <h3 className="text-lg font-medium text-gray-800 mb-4">Recomendaciones</h3>
         <ul className="space-y-2 text-gray-700">
