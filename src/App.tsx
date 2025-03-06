@@ -11,7 +11,7 @@ import AuthButton from './components/AuthButton';
 import { 
   searchProducts, 
   getCategories, 
-  getProductsByCategory, 
+  searchProducts as getProductsByCategory,
   Product, 
   Category 
 } from './services/api';
@@ -42,7 +42,7 @@ function App() {
     ['products', searchQuery, selectedCategory],
     () => {
       if (selectedCategory) {
-        return getProductsByCategory(selectedCategory);
+        return getProductsByCategory(searchQuery, 50, 0, false);
       }
       if (searchQuery) {
         return searchProducts(searchQuery);
