@@ -12,6 +12,20 @@ import { v4 as uuidv4 } from 'uuid';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Validar variables de entorno requeridas
+const requiredEnvVars = [
+  'VITE_ML_CLIENT_ID',
+  'VITE_ML_CLIENT_SECRET',
+  'VITE_ML_REDIRECT_URI'
+];
+
+const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+if (missingEnvVars.length > 0) {
+  console.error('Error: Las siguientes variables de entorno son requeridas pero no están definidas:');
+  missingEnvVars.forEach(varName => console.error(`- ${varName}`));
+  process.exit(1);
+}
+
 const app = express();
 const PORT = process.env.PORT || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -146,55 +160,30 @@ app.get('/api/proxy/categories', async (req, res) => {
 // Proxy para búsqueda de productos
 app.get('/api/proxy/search', async (req, res) => {
   try {
-    const { q, category, limit = 50, offset = 0 } = req.query;
+    const { q, limit = 50, offset = 0 } = req.query;
     
-    // Validar parámetros
-    if (!q && !category) {
-      return res.status(400).json({ 
-        error: 'Se requiere un término de búsqueda (q) o una categoría' 
-      });
+    if (!q) {
+      return res.status(400).json({ error: 'Parámetro de búsqueda requerido' });
     }
 
-    // Construir URL base
-    const baseUrl = 'https://api.mercadolibre.com/sites/MLA/search';
-    
-    // Construir parámetros
-    const params = new URLSearchParams();
-    if (q) params.append('q', q);
-    if (category) params.append('category', category);
-    
-    // Asegurarse de que limit y offset sean números válidos
-    const limitNum = Math.min(50, Math.max(1, parseInt(limit.toString()) || 50));
-    const offsetNum = Math.max(0, parseInt(offset.toString()) || 0);
-    
-    params.append('limit', limitNum.toString());
-    params.append('offset', offsetNum.toString());
-
-    // Realizar la búsqueda
-    const response = await axios.get(`${baseUrl}?${params.toString()}`);
-
-    // Procesar y enviar respuesta
-    res.json({
-      results: response.data.results,
-      paging: {
-        total: response.data.paging.total,
-        offset: response.data.paging.offset,
-        limit: response.data.paging.limit
+    const response = await axios.get('https://api.mercadolibre.com/sites/MLA/search', {
+      params: {
+        q,
+        limit,
+        offset
+      },
+      headers: {
+        'Authorization': `Bearer ${req.headers.authorization}`
       }
     });
+
+    res.json(response.data);
   } catch (error) {
-    console.error('Error en búsqueda de productos:', error.message);
-    if (error.response) {
-      res.status(error.response.status).json({
-        error: 'Error en búsqueda de productos',
-        details: error.response.data
-      });
-    } else {
-      res.status(500).json({ 
-        error: 'Error en búsqueda de productos',
-        message: error.message 
-      });
-    }
+    console.error('Error en búsqueda de productos:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Error en búsqueda de productos',
+      details: error.response?.data || error.message
+    });
   }
 });
 
@@ -225,6 +214,15 @@ app.use(express.static(path.join(__dirname, 'dist')));
 // Todas las demás rutas sirven el index.html para el enrutamiento del lado del cliente
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    error: 'Error interno del servidor',
+    details: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
 });
 
 // Iniciar el servidor
