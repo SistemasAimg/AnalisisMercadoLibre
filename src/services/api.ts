@@ -500,4 +500,4 @@ export const getCategoriesByQuery = async (query: string): Promise<Array<{
     params: { q: query }
   });
   return response.data;
-};
+}; 
