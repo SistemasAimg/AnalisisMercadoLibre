@@ -186,42 +186,70 @@ app.get('/api/proxy/items/:id', async (req, res) => {
   }
 });
 
-// Endpoint para obtener el historial de un item
-app.get('/api/proxy/items/:itemId/history', async (req, res) => {
+// Endpoint para obtener visitas de items
+app.get('/api/proxy/visits/items', async (req, res) => {
+  try {
+    const { ids } = req.query;
+    const response = await axios.get(
+      `https://api.mercadolibre.com/items/visits?ids=${ids}`,
+      {
+        headers: {
+          Authorization: `Bearer ${req.mlToken}`
+        }
+      }
+    );
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener visitas:', error);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener visitas',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Endpoint para obtener estadísticas de visitas por ventana de tiempo
+app.get('/api/proxy/items/:itemId/visits/time_window', async (req, res) => {
   try {
     const { itemId } = req.params;
+    const { last, unit } = req.query;
     
-    // Obtener historial de precios
-    const priceResponse = await axios.get(
-      `https://api.mercadolibre.com/items/${itemId}/history`, 
+    const response = await axios.get(
+      `https://api.mercadolibre.com/items/${itemId}/visits/time_window`,
       {
+        params: { last, unit },
         headers: {
           Authorization: `Bearer ${req.mlToken}`
         }
       }
     );
-
-    // Obtener información de visitas
-    const visitsResponse = await axios.get(
-      `https://api.mercadolibre.com/items/${itemId}/visits/time_window?last=30&unit=day`,
-      {
-        headers: {
-          Authorization: `Bearer ${req.mlToken}`
-        }
-      }
-    );
-
-    // Combinar la información
-    const response = {
-      price_history: priceResponse.data.price_history || [],
-      visits: visitsResponse.data.results || []
-    };
-
-    res.json(response);
+    res.json(response.data);
   } catch (error) {
-    console.error('Error al obtener historial del item:', error);
+    console.error('Error al obtener estadísticas de visitas:', error);
     res.status(error.response?.status || 500).json({
-      error: 'Error al obtener historial del item',
+      error: 'Error al obtener estadísticas de visitas',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Endpoint para obtener información de un item
+app.get('/api/proxy/items/:itemId', async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const response = await axios.get(
+      `https://api.mercadolibre.com/items/${itemId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${req.mlToken}`
+        }
+      }
+    );
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener información del item:', error);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener información del item',
       details: error.response?.data || error.message
     });
   }

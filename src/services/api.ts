@@ -166,8 +166,8 @@ async function fetchMultiplePages(query: string, totalNeeded: number, officialSt
 
 // Función para buscar productos incluyendo filtro de tiendas oficiales
 export const searchProducts = async (
-  query: string,
-  limit = 50,
+  query: string, 
+  limit = 50, 
   offset = 0,
   officialStoresOnly = false
 ): Promise<SearchResponse> => {
@@ -266,20 +266,33 @@ export async function getItemStats(itemId: string): Promise<ItemStats> {
 
 export const getItemHistory = async (itemId: string): Promise<ItemHistory[]> => {
   try {
-    const response = await proxyApi.get(`/items/${itemId}/history`);
+    // Obtener las visitas de los últimos 30 días
+    const visitsResponse = await proxyApi.get(`/visits/items?ids=${itemId}`);
     
-    // Verificar la estructura de la respuesta
-    if (!response.data || !Array.isArray(response.data.price_history)) {
-      console.warn(`Estructura inesperada en historial para item ${itemId}:`, response.data);
-      return [];
-    }
+    // Obtener estadísticas del item
+    const statsResponse = await proxyApi.get(`/items/${itemId}/visits/time_window`, {
+      params: {
+        last: 30,
+        unit: 'day'
+      }
+    });
 
-    // Transformar los datos al formato esperado
-    return response.data.price_history.map((entry: any) => ({
+    // Obtener información actual del item
+    const itemResponse = await proxyApi.get(`/items/${itemId}`);
+
+    // Combinar la información
+    const currentPrice = itemResponse.data.price;
+    const currentStock = itemResponse.data.available_quantity;
+    
+    // Crear historial con la información disponible
+    const history: ItemHistory[] = statsResponse.data.results.map((entry: any) => ({
       date: entry.date,
-      price: entry.price,
-      available_quantity: entry.available_quantity || 0
+      price: currentPrice, // Usamos el precio actual ya que no tenemos histórico
+      available_quantity: currentStock,
+      visits: entry.total || 0
     }));
+
+    return history;
   } catch (error) {
     console.error(`Error al obtener historial del item ${itemId}:`, error);
     return []; // Retornar array vacío en caso de error
@@ -318,7 +331,7 @@ async function getSellerDetails(sellerId: number): Promise<SellerReputation> {
 
 // Función mejorada para obtener análisis de mercado
 export const getMarketAnalysis = async (
-  query: string,
+  query: string, 
   officialStoresOnly = false
 ): Promise<MarketAnalysis> => {
   try {
