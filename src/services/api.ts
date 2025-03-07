@@ -145,17 +145,39 @@ export const getTrends = async (): Promise<Trend[]> => {
   }
 };
 
+// Función para obtener múltiples páginas de resultados
+async function fetchMultiplePages(query: string, totalNeeded: number, officialStoresOnly = false): Promise<Product[]> {
+  const limit = 50; // Límite máximo permitido por la API
+  const totalPages = Math.ceil(totalNeeded / limit);
+  const results: Product[] = [];
+  
+  const requests = Array.from({ length: totalPages }, (_, i) => {
+    return searchProducts(query, limit, i * limit, officialStoresOnly)
+      .then(response => results.push(...response.results))
+      .catch(error => {
+        console.error(`Error en página ${i + 1}:`, error);
+        return []; // Retornar array vacío en caso de error
+      });
+  });
+
+  await Promise.all(requests);
+  return results.slice(0, totalNeeded);
+}
+
 // Función para buscar productos incluyendo filtro de tiendas oficiales
 export const searchProducts = async (
-  query: string, 
-  limit = 50, 
+  query: string,
+  limit = 50,
   offset = 0,
   officialStoresOnly = false
 ): Promise<SearchResponse> => {
   try {
+    // Asegurarse de que el límite no exceda 50
+    const safeLimit = Math.min(50, limit);
+    
     const params = new URLSearchParams({
       q: query,
-      limit: limit.toString(),
+      limit: safeLimit.toString(),
       offset: offset.toString(),
     });
 
@@ -275,15 +297,26 @@ export const getMarketAnalysis = async (
   officialStoresOnly = false
 ): Promise<MarketAnalysis> => {
   try {
-    // Obtener productos con un límite mayor para mejor análisis
-    const searchData = await searchProducts(query, 100, 0, officialStoresOnly);
+    // Primero obtener la primera página para ver el total disponible
+    const initialSearch = await searchProducts(query, 50, 0, officialStoresOnly);
     
-    if (!searchData.results.length) {
+    // Determinar cuántos productos necesitamos (máximo 100)
+    const totalNeeded = Math.min(100, initialSearch.paging.total);
+    
+    // Si necesitamos más de 50, hacer peticiones adicionales
+    let allProducts: Product[];
+    if (totalNeeded > 50) {
+      allProducts = await fetchMultiplePages(query, totalNeeded, officialStoresOnly);
+    } else {
+      allProducts = initialSearch.results;
+    }
+
+    if (!allProducts.length) {
       throw new Error('No hay suficientes datos para realizar un análisis');
     }
 
-    // Obtener datos detallados de los primeros 20 productos (para evitar rate limiting)
-    const topProducts = searchData.results.slice(0, 20);
+    // Obtener datos detallados de los primeros 20 productos
+    const topProducts = allProducts.slice(0, 20);
     
     // Obtener estadísticas e historiales en paralelo
     const productDetailsPromises = topProducts.map(async (product) => {
@@ -304,7 +337,7 @@ export const getMarketAnalysis = async (
     const productDetails = await Promise.all(productDetailsPromises);
 
     // Calcular estadísticas de precios actuales
-    const prices = searchData.results.map(item => item.price);
+    const prices = allProducts.map(item => item.price);
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
     const averagePrice = prices.reduce((sum, price) => sum + price, 0) / prices.length;
@@ -313,7 +346,7 @@ export const getMarketAnalysis = async (
     const officialStoresMap = new Map();
     let totalOfficialStoreProducts = 0;
 
-    for (const product of searchData.results) {
+    for (const product of allProducts) {
       if (product.official_store_id) {
         totalOfficialStoreProducts++;
         if (!officialStoresMap.has(product.official_store_id)) {
@@ -346,7 +379,7 @@ export const getMarketAnalysis = async (
 
     // Calcular nivel de competencia basado en datos reales
     const competitionLevel = calculateCompetitionLevel(
-      searchData.results,
+      allProducts,
       productDetails.map(detail => detail.sellerDetails)
     );
 
@@ -355,7 +388,7 @@ export const getMarketAnalysis = async (
 
     // Generar recomendaciones basadas en datos reales
     const recommendations = generateRecommendations(
-      searchData.results,
+      allProducts,
       productDetails,
       salesTrend,
       competitionLevel
@@ -364,7 +397,7 @@ export const getMarketAnalysis = async (
     return {
       averagePrice,
       priceRange: { min: minPrice, max: maxPrice },
-      totalSellers: new Set(searchData.results.map(item => item.seller.id)).size,
+      totalSellers: new Set(allProducts.map(item => item.seller.id)).size,
       officialStores: {
         total: officialStoresMap.size,
         stores: Array.from(officialStoresMap.values()).map(store => ({
@@ -374,9 +407,9 @@ export const getMarketAnalysis = async (
           averagePrice: store.totalPrice / store.products.length,
           metrics: store.metrics
         })),
-        percentage: (officialStoresMap.size / searchData.results.length) * 100
+        percentage: (officialStoresMap.size / allProducts.length) * 100
       },
-      totalListings: searchData.paging.total,
+      totalListings: initialSearch.paging.total,
       priceHistory: sortedHistories,
       salesTrend,
       competitionLevel,

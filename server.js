@@ -143,9 +143,16 @@ app.get('/api/proxy/search', async (req, res) => {
       });
     }
 
+    // Asegurarse de que el límite no exceda 50
+    const safeLimit = Math.min(50, parseInt(limit.toString()));
+    
     // Construir URL y parámetros
     const baseUrl = 'https://api.mercadolibre.com/sites/MLA/search';
-    const params = new URLSearchParams(req.query);
+    const params = new URLSearchParams({
+      ...req.query,
+      limit: safeLimit.toString(),
+      offset: offset.toString()
+    });
 
     // Realizar la petición a MercadoLibre con el token
     const response = await axios.get(`${baseUrl}?${params.toString()}`, {
