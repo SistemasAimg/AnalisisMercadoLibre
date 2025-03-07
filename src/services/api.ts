@@ -4,21 +4,29 @@ import { getAccessToken } from './auth';
 const API_BASE_URL = 'https://api.mercadolibre.com';
 const PROXY_BASE_URL = '/api/proxy';
 
-// Crear una instancia de axios con configuración base
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: import.meta.env.VITE_ML_API_BASE_URL || API_BASE_URL,
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json'
+  }
 });
 
-// Interceptor para añadir el token de acceso a las peticiones
+// Interceptor para agregar el token de autorización
 api.interceptors.request.use(async (config) => {
-  const token = await getAccessToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  try {
+    const token = await getAccessToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  } catch (error) {
+    console.error('Error al obtener token:', error);
+    return Promise.reject(error);
   }
-  return config;
-}, (error) => {
-  return Promise.reject(error);
 });
+
+export default api;
 
 export interface Product {
   id: string;

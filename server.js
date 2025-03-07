@@ -8,9 +8,33 @@ import rateLimit from 'express-rate-limit';
 import compression from 'compression';
 import morgan from 'morgan';
 import { v4 as uuidv4 } from 'uuid';
+import dotenv from 'dotenv';
+import winston from 'winston';
+
+// Configuración de dotenv
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Configuración del logger
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.File({ filename: 'error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'combined.log' })
+  ]
+});
+
+if (process.env.NODE_ENV !== 'production') {
+  logger.add(new winston.transports.Console({
+    format: winston.format.simple()
+  }));
+}
 
 // Validar variables de entorno requeridas
 const requiredEnvVars = [
@@ -21,14 +45,16 @@ const requiredEnvVars = [
 
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 if (missingEnvVars.length > 0) {
-  console.error('Error: Las siguientes variables de entorno son requeridas pero no están definidas:');
-  missingEnvVars.forEach(varName => console.error(`- ${varName}`));
+  logger.error(`Faltan variables de entorno requeridas: ${missingEnvVars.join(', ')}`);
   process.exit(1);
 }
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
+
+// Configuración de trust proxy para rate limiting
+app.set('trust proxy', 1);
 
 // Security middleware
 app.use(helmet());
@@ -49,7 +75,7 @@ app.use(limiter);
 app.use(compression());
 
 // Logging
-app.use(morgan('combined'));
+app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 
 // Request ID middleware
 app.use((req, res, next) => {
@@ -62,7 +88,7 @@ app.use((req, res, next) => {
 app.use(express.json());
 
 // Log para depuración
-console.log(`Iniciando servidor en ${HOST}:${PORT}`);
+logger.info(`Iniciando servidor en ${HOST}:${PORT}`);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -88,7 +114,7 @@ app.post('/api/auth/token', async (req, res) => {
 
     res.json(response.data);
   } catch (error) {
-    console.error('Error al obtener token:', error.response?.data || error.message);
+    logger.error('Error al obtener token:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
       error: 'Error al obtener token',
       details: error.response?.data || error.message
@@ -114,7 +140,7 @@ app.post('/api/auth/refresh', async (req, res) => {
 
     res.json(response.data);
   } catch (error) {
-    console.error('Error al refrescar token:', error.response?.data || error.message);
+    logger.error('Error al refrescar token:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
       error: 'Error al refrescar token',
       details: error.response?.data || error.message
@@ -125,14 +151,14 @@ app.post('/api/auth/refresh', async (req, res) => {
 // Proxy para la API de MercadoLibre
 app.get('/api/proxy/trends', async (req, res) => {
   try {
-    console.log('Solicitando tendencias a MercadoLibre');
+    logger.info('Solicitando tendencias a MercadoLibre');
     const response = await axios.get('https://api.mercadolibre.com/trends/MLA');
-    console.log('Respuesta recibida de MercadoLibre');
+    logger.info('Respuesta recibida de MercadoLibre');
     res.json(response.data);
   } catch (error) {
-    console.error('Error al obtener tendencias:', error.message);
+    logger.error('Error al obtener tendencias:', error.message);
     if (error.response) {
-      console.error('Detalles del error:', error.response.status, error.response.data);
+      logger.error('Detalles del error:', error.response.status, error.response.data);
       res.status(error.response.status).json({
         error: 'Error al obtener tendencias',
         details: error.response.data
@@ -149,7 +175,7 @@ app.get('/api/proxy/categories', async (req, res) => {
     const response = await axios.get('https://api.mercadolibre.com/sites/MLA/categories');
     res.json(response.data);
   } catch (error) {
-    console.error('Error al obtener categorías:', error.message);
+    logger.error('Error al obtener categorías:', error.message);
     res.status(error.response?.status || 500).json({
       error: 'Error al obtener categorías',
       details: error.response?.data || error.message
@@ -179,7 +205,7 @@ app.get('/api/proxy/search', async (req, res) => {
 
     res.json(response.data);
   } catch (error) {
-    console.error('Error en búsqueda de productos:', error.response?.data || error.message);
+    logger.error('Error en búsqueda de productos:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
       error: 'Error en búsqueda de productos',
       details: error.response?.data || error.message
@@ -194,7 +220,7 @@ app.get('/api/proxy/items/:id', async (req, res) => {
     const response = await axios.get(`https://api.mercadolibre.com/items/${id}`);
     res.json(response.data);
   } catch (error) {
-    console.error('Error al obtener detalles del producto:', error.message);
+    logger.error('Error al obtener detalles del producto:', error.message);
     res.status(error.response?.status || 500).json({
       error: 'Error al obtener detalles del producto',
       details: error.response?.data || error.message
@@ -204,7 +230,7 @@ app.get('/api/proxy/items/:id', async (req, res) => {
 
 // Endpoint para webhooks de MercadoLibre
 app.post('/api/webhooks/mercadolibre', (req, res) => {
-  console.log('Webhook recibido:', req.body);
+  logger.info('Webhook recibido:', req.body);
   return res.status(200).json({ status: 'ok' });
 });
 
@@ -218,7 +244,7 @@ app.get('*', (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  logger.error(err.stack);
   res.status(500).json({
     error: 'Error interno del servidor',
     details: process.env.NODE_ENV === 'development' ? err.message : undefined
@@ -227,5 +253,5 @@ app.use((err, req, res, next) => {
 
 // Iniciar el servidor
 app.listen(PORT, HOST, () => {
-  console.log(`Servidor ejecutándose en http://${HOST}:${PORT}`);
+  logger.info(`Servidor ejecutándose en http://${HOST}:${PORT}`);
 });
