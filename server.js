@@ -186,48 +186,36 @@ app.get('/api/proxy/items/:id', async (req, res) => {
   }
 });
 
-// Endpoint para obtener visitas de items
-app.get('/api/proxy/visits/items', async (req, res) => {
-  try {
-    const { ids } = req.query;
-    const response = await axios.get(
-      `https://api.mercadolibre.com/items/visits?ids=${ids}`,
-      {
-        headers: {
-          Authorization: `Bearer ${req.mlToken}`
-        }
-      }
-    );
-    res.json(response.data);
-  } catch (error) {
-    console.error('Error al obtener visitas:', error);
-    res.status(error.response?.status || 500).json({
-      error: 'Error al obtener visitas',
-      details: error.response?.data || error.message
-    });
-  }
-});
-
-// Endpoint para obtener estadísticas de visitas por ventana de tiempo
-app.get('/api/proxy/items/:itemId/visits/time_window', async (req, res) => {
+// Endpoint para obtener visitas de un item
+app.get('/api/proxy/items/:itemId/visits', async (req, res) => {
   try {
     const { itemId } = req.params;
-    const { last, unit } = req.query;
+    const { date_from, date_to } = req.query;
     
     const response = await axios.get(
       `https://api.mercadolibre.com/items/${itemId}/visits/time_window`,
       {
-        params: { last, unit },
+        params: {
+          last: 30,
+          unit: 'day'
+        },
         headers: {
           Authorization: `Bearer ${req.mlToken}`
         }
       }
     );
-    res.json(response.data);
+
+    // Transformar la respuesta al formato esperado
+    const results = response.data.results.map((entry: any) => ({
+      date: entry.date,
+      total: entry.total
+    }));
+
+    res.json({ results });
   } catch (error) {
-    console.error('Error al obtener estadísticas de visitas:', error);
+    console.error('Error al obtener visitas:', error);
     res.status(error.response?.status || 500).json({
-      error: 'Error al obtener estadísticas de visitas',
+      error: 'Error al obtener visitas',
       details: error.response?.data || error.message
     });
   }

@@ -242,6 +242,7 @@ export interface ItemHistory {
   date: string;
   price: number;
   available_quantity: number;
+  visits?: number;
 }
 
 // Exportar las funciones que necesitamos
@@ -266,31 +267,39 @@ export async function getItemStats(itemId: string): Promise<ItemStats> {
 
 export const getItemHistory = async (itemId: string): Promise<ItemHistory[]> => {
   try {
-    // Obtener las visitas de los últimos 30 días
-    const visitsResponse = await proxyApi.get(`/visits/items?ids=${itemId}`);
-    
-    // Obtener estadísticas del item
-    const statsResponse = await proxyApi.get(`/items/${itemId}/visits/time_window`, {
+    // Obtener información actual del item primero
+    const itemResponse = await proxyApi.get(`/items/${itemId}`);
+    const currentPrice = itemResponse.data.price;
+    const currentStock = itemResponse.data.available_quantity;
+
+    // Obtener estadísticas de visitas (últimos 30 días)
+    const statsResponse = await proxyApi.get(`/items/${itemId}/visits`, {
       params: {
-        last: 30,
-        unit: 'day'
+        date_from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        date_to: new Date().toISOString().split('T')[0]
       }
     });
 
-    // Obtener información actual del item
-    const itemResponse = await proxyApi.get(`/items/${itemId}`);
-
-    // Combinar la información
-    const currentPrice = itemResponse.data.price;
-    const currentStock = itemResponse.data.available_quantity;
+    // Crear el historial combinando la información
+    const history: ItemHistory[] = [];
+    const today = new Date();
     
-    // Crear historial con la información disponible
-    const history: ItemHistory[] = statsResponse.data.results.map((entry: any) => ({
-      date: entry.date,
-      price: currentPrice, // Usamos el precio actual ya que no tenemos histórico
-      available_quantity: currentStock,
-      visits: entry.total || 0
-    }));
+    for (let i = 0; i < 30; i++) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      
+      const visitsForDay = statsResponse.data.results.find(
+        (r: any) => r.date.split('T')[0] === dateStr
+      );
+
+      history.unshift({
+        date: dateStr,
+        price: currentPrice,
+        available_quantity: currentStock,
+        visits: visitsForDay?.total || 0
+      });
+    }
 
     return history;
   } catch (error) {
