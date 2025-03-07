@@ -1,40 +1,20 @@
 import React from 'react';
-import { useQuery } from 'react-query';
+import { Category } from '../services/api';
 import { Layers } from 'lucide-react';
-import { Category, getCategories } from '../services/api';
 
 interface CategoryListProps {
+  categories: Category[];
   onSelectCategory: (categoryId: string) => void;
   selectedCategory: string | null;
 }
 
-const CategoryList: React.FC<CategoryListProps> = ({
-  onSelectCategory,
-  selectedCategory,
+const CategoryList: React.FC<CategoryListProps> = ({ 
+  categories, 
+  onSelectCategory, 
+  selectedCategory 
 }) => {
-
-  // Hook de React Query para cargar categorías
-  const {
-    data: categories = [],
-    isLoading,
-    error,
-  } = useQuery<Category[]>('categories', getCategories);
-
-  if (isLoading) {
-    return (
-      <div className="bg-white rounded-lg shadow-md p-4">
-        <p className="text-gray-500">Cargando categorías...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-white rounded-lg shadow-md p-4">
-        <p className="text-red-500">Error al cargar categorías.</p>
-      </div>
-    );
-  }
+  // Asegurarse de que categories sea un array
+  const categoriesArray = Array.isArray(categories) ? categories : [];
 
   return (
     <div className="bg-white rounded-lg shadow-md p-4">
@@ -43,17 +23,17 @@ const CategoryList: React.FC<CategoryListProps> = ({
         <h2 className="text-lg font-medium text-gray-800">Categorías</h2>
       </div>
       <div className="space-y-1">
-        {categories.map((cat) => (
+        {categoriesArray.map((category) => (
           <button
-            key={cat.id}
-            onClick={() => onSelectCategory(cat.id)}
+            key={category.id}
+            onClick={() => onSelectCategory(category.id)}
             className={`w-full text-left px-3 py-2 rounded-md transition-colors ${
-              selectedCategory === cat.id
+              selectedCategory === category.id
                 ? 'bg-blue-100 text-blue-700'
                 : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
-            {cat.name}
+            {category.name}
           </button>
         ))}
       </div>

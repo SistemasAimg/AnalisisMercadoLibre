@@ -11,18 +11,13 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "@headlessui/react": "^1.7.18",
-    "@tanstack/react-query": "^5.28.4",
     "axios": "^1.6.7",
     "chart.js": "^4.4.1",
-    "cors": "^2.8.5",
-    "date-fns": "^3.3.1",
     "express": "^4.18.2",
     "js-cookie": "^3.0.5",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",
     "react-chartjs-2": "^5.2.0",
-    "react-datepicker": "^6.2.0",
     "react-dom": "^18.3.1",
     "react-query": "^3.39.3",
     "react-router-dom": "^6.22.3"
@@ -33,7 +28,6 @@
     "@types/js-cookie": "^3.0.6",
     "@types/node": "^20.11.30",
     "@types/react": "^18.3.5",
-    "@types/react-datepicker": "^6.0.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.18",

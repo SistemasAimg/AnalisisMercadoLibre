@@ -15,7 +15,7 @@ Esta aplicación está configurada para desplegarse automáticamente en Google C
    - Storage Admin
    - Service Account User
 
-### Configuración de secretos en GitHubas
+### Configuración de secretos en GitHub
 
 Para que el flujo de trabajo funcione, debes configurar los siguientes secretos en tu repositorio de GitHub:
 
