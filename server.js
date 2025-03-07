@@ -10,6 +10,7 @@ import morgan from 'morgan';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
 import winston from 'winston';
+import cookieParser from 'cookie-parser';
 
 // Configuración de dotenv
 dotenv.config();
@@ -61,8 +62,12 @@ app.use(helmet());
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
   methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true // Importante para cookies
 }));
+
+// Cookie parser middleware
+app.use(cookieParser());
 
 // Rate limiting
 const limiter = rateLimit({
@@ -192,6 +197,16 @@ app.get('/api/proxy/search', async (req, res) => {
       return res.status(400).json({ error: 'Parámetro de búsqueda requerido' });
     }
 
+    // Obtener el token de las cookies
+    const accessToken = req.cookies?.ml_access_token;
+    
+    if (!accessToken) {
+      return res.status(401).json({ 
+        error: 'No autorizado',
+        message: 'Token de acceso no encontrado en las cookies'
+      });
+    }
+
     const response = await axios.get('https://api.mercadolibre.com/sites/MLA/search', {
       params: {
         q,
@@ -199,7 +214,7 @@ app.get('/api/proxy/search', async (req, res) => {
         offset
       },
       headers: {
-        'Authorization': `Bearer ${req.headers.authorization}`
+        'Authorization': `Bearer ${accessToken}`
       }
     });
 
