@@ -2,7 +2,7 @@ import axios from 'axios';
 import Cookies from 'js-cookie';
 
 // Constantes para la autenticación
-const CLIENT_ID = import.meta.env.VITE_ML_CLIENT_ID || '7074402608653029';
+const CLIENT_ID = import.meta.env.VITE_ML_CLIENT_ID;
 const REDIRECT_URI = import.meta.env.VITE_ML_REDIRECT_URI || window.location.origin + '/auth/callback';
 const API_BASE_URL = 'https://api.mercadolibre.com';
 
@@ -85,14 +85,33 @@ export const refreshAccessToken = async (): Promise<AuthToken | null> => {
  * Guarda el token en cookies
  */
 export const saveToken = (token: AuthToken): void => {
-  const expiryDate = new Date(new Date().getTime() + token.expires_in * 1000);
-  
-  Cookies.set(ACCESS_TOKEN_COOKIE, token.access_token, { expires: 1 }); // 1 día
-  Cookies.set(REFRESH_TOKEN_COOKIE, token.refresh_token, { expires: 60 }); // 60 días
-  Cookies.set(TOKEN_EXPIRY_COOKIE, expiryDate.toISOString(), { expires: 1 });
-  
+  const expiryDate = new Date();
+  expiryDate.setSeconds(expiryDate.getSeconds() + token.expires_in);
+
+  Cookies.set(ACCESS_TOKEN_COOKIE, token.access_token, {
+    expires: expiryDate,
+    secure: true,
+    sameSite: 'strict'
+  });
+
+  Cookies.set(REFRESH_TOKEN_COOKIE, token.refresh_token, {
+    expires: 30, // 30 días
+    secure: true,
+    sameSite: 'strict'
+  });
+
+  Cookies.set(TOKEN_EXPIRY_COOKIE, expiryDate.toISOString(), {
+    expires: expiryDate,
+    secure: true,
+    sameSite: 'strict'
+  });
+
   if (token.user_id) {
-    Cookies.set(USER_ID_COOKIE, token.user_id.toString(), { expires: 60 });
+    Cookies.set(USER_ID_COOKIE, token.user_id.toString(), {
+      expires: 30, // 30 días
+      secure: true,
+      sameSite: 'strict'
+    });
   }
 };
 
@@ -122,18 +141,33 @@ export const isTokenExpired = (): boolean => {
  * Obtiene el token de acceso actual, refrescándolo si es necesario
  */
 export const getAccessToken = async (): Promise<string | null> => {
-  let token = Cookies.get(ACCESS_TOKEN_COOKIE);
-  
-  if (!token || isTokenExpired()) {
-    const newToken = await refreshAccessToken();
-    if (newToken) {
-      token = newToken.access_token;
-    } else {
+  const accessToken = Cookies.get(ACCESS_TOKEN_COOKIE);
+  const tokenExpiry = Cookies.get(TOKEN_EXPIRY_COOKIE);
+  const refreshToken = Cookies.get(REFRESH_TOKEN_COOKIE);
+
+  if (!accessToken) {
+    return null;
+  }
+
+  // Si el token está expirado y tenemos refresh token, intentamos refrescarlo
+  if (tokenExpiry && new Date(tokenExpiry) <= new Date() && refreshToken) {
+    try {
+      const response = await axios.post('/api/auth/refresh', { refresh_token: refreshToken });
+      const newToken = response.data;
+      saveToken(newToken);
+      return newToken.access_token;
+    } catch (error) {
+      console.error('Error al refrescar el token:', error);
+      // Si falla el refresh, limpiamos las cookies
+      Cookies.remove(ACCESS_TOKEN_COOKIE);
+      Cookies.remove(REFRESH_TOKEN_COOKIE);
+      Cookies.remove(TOKEN_EXPIRY_COOKIE);
+      Cookies.remove(USER_ID_COOKIE);
       return null;
     }
   }
-  
-  return token;
+
+  return accessToken;
 };
 
 /**

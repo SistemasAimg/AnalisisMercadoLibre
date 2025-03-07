@@ -1,11 +1,10 @@
 import axios from 'axios';
 import { getAccessToken } from './auth';
 
-const API_BASE_URL = 'https://api.mercadolibre.com';
 const PROXY_BASE_URL = '/api/proxy';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_ML_API_BASE_URL || API_BASE_URL,
+  baseURL: PROXY_BASE_URL,
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json'
