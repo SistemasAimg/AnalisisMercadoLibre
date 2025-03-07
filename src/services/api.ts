@@ -203,44 +203,28 @@ export const getProductDetails = async (productId: string): Promise<Product> => 
   }
 };
 
-// Interfaces adicionales para los nuevos datos
-interface ItemVisits {
+// Hacer públicas las interfaces necesarias
+export interface ItemVisits {
   date: string;
   total: number;
 }
 
-interface ItemStats {
+export interface ItemStats {
   visits: ItemVisits[];
   sales: number;
   views: number;
   lastUpdated: string;
 }
 
-interface SellerReputation {
-  level_id: string;
-  power_seller_status: string | null;
-  transactions: {
-    canceled: number;
-    completed: number;
-    period: string;
-    ratings: {
-      negative: number;
-      neutral: number;
-      positive: number;
-    };
-    total: number;
-  };
-}
-
-interface ItemHistory {
+export interface ItemHistory {
   price: number;
   date: string;
   soldQuantity: number;
   availableQuantity: number;
 }
 
-// Función para obtener estadísticas detalladas de un item
-async function getItemStats(itemId: string): Promise<ItemStats> {
+// Exportar las funciones que necesitamos
+export async function getItemStats(itemId: string): Promise<ItemStats> {
   try {
     const [visitsResponse, statsResponse] = await Promise.all([
       proxyApi.get(`/items/${itemId}/visits/time_window?last=30&unit=day`),
@@ -259,8 +243,7 @@ async function getItemStats(itemId: string): Promise<ItemStats> {
   }
 }
 
-// Función para obtener el historial de un item
-async function getItemHistory(itemId: string): Promise<ItemHistory[]> {
+export async function getItemHistory(itemId: string): Promise<ItemHistory[]> {
   try {
     const response = await proxyApi.get(`/items/${itemId}/history`);
     return response.data.map((record: any) => ({

@@ -1,8 +1,14 @@
 import React from 'react';
-import { Product } from '../services/api';
-import { ArrowLeft, Star, Truck, ShieldCheck, BarChart3, Line } from 'lucide-react';
 import { useQuery } from 'react-query';
-import { getItemStats, getItemHistory } from '../services/api';
+import { ArrowLeft, Star, Truck, ShieldCheck, BarChart3 } from 'lucide-react';
+import { Line, Bar } from 'react-chartjs-2';
+import { 
+  Product, 
+  getItemStats, 
+  getItemHistory,
+  ItemStats,
+  ItemHistory 
+} from '../services/api';
 
 interface ProductDetailProps {
   product: Product | null;
@@ -10,13 +16,13 @@ interface ProductDetailProps {
 }
 
 const ProductDetail: React.FC<ProductDetailProps> = ({ product, onBack }) => {
-  const { data: productStats } = useQuery(
+  const { data: productStats } = useQuery<ItemStats>(
     ['productStats', product?.id],
     () => getItemStats(product!.id),
     { enabled: !!product }
   );
 
-  const { data: productHistory } = useQuery(
+  const { data: productHistory } = useQuery<ItemHistory[]>(
     ['productHistory', product?.id],
     () => getItemHistory(product!.id),
     { enabled: !!product }
