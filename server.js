@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
+import cors from 'cors';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,36 +11,55 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
 
-// Middleware para parsear JSON
+// Configuración de MercadoLibre
+const ML_CLIENT_ID = process.env.ML_CLIENT_ID;
+const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET;
+const ML_REDIRECT_URI = process.env.ML_REDIRECT_URI;
+
+// Cache para el token
+let mlAccessToken = null;
+let tokenExpiration = null;
+
+// Función para obtener/renovar el token
+async function getMLAccessToken() {
+  try {
+    if (mlAccessToken && tokenExpiration && Date.now() < tokenExpiration) {
+      return mlAccessToken;
+    }
+
+    const response = await axios.post('https://api.mercadolibre.com/oauth/token', {
+      grant_type: 'client_credentials',
+      client_id: ML_CLIENT_ID,
+      client_secret: ML_CLIENT_SECRET
+    });
+
+    mlAccessToken = response.data.access_token;
+    // Establecer expiración 5 minutos antes del tiempo real para margen de seguridad
+    tokenExpiration = Date.now() + (response.data.expires_in * 1000) - (5 * 60 * 1000);
+    
+    return mlAccessToken;
+  } catch (error) {
+    console.error('Error al obtener token de ML:', error);
+    throw error;
+  }
+}
+
+// Middleware básico
+app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'dist')));
 
 // Log para depuración
 console.log(`Iniciando servidor en ${HOST}:${PORT}`);
 
-// Middleware para verificar token en las peticiones al proxy
-app.use('/api/proxy', async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  
-  if (!authHeader) {
-    return res.status(401).json({
-      error: 'Error en búsqueda de productos',
-      details: {
-        code: 'unauthorized',
-        message: 'authorization value not present'
-      }
-    });
-  }
-
+// Middleware para inyectar el token en las peticiones
+app.use('/api/proxy/*', async (req, res, next) => {
   try {
-    // Pasar el token a las peticiones a MercadoLibre
-    req.mlToken = authHeader.split(' ')[1];
+    const token = await getMLAccessToken();
+    req.mlToken = token;
     next();
   } catch (error) {
-    console.error('Error de autenticación:', error);
-    res.status(401).json({
-      error: 'Error de autenticación',
-      details: error.message
-    });
+    next(error);
   }
 });
 
@@ -249,51 +269,70 @@ app.post('/api/webhooks/mercadolibre', (req, res) => {
   return res.status(200).json({ status: 'ok' });
 });
 
-// Servir archivos estáticos
-app.use(express.static(path.join(__dirname, 'dist')));
-
-// Todas las demás rutas sirven el index.html para el enrutamiento del lado del cliente
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
-
-// Health check endpoint
+// Health check mejorado
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memoryUsage: process.memoryUsage()
+  });
 });
 
-// Manejo de errores mejorado
+// Middleware de error global
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   res.status(err.status || 500).json({
     error: err.message || 'Error interno del servidor',
-    details: process.env.NODE_ENV === 'development' ? err : undefined
+    timestamp: new Date().toISOString()
   });
 });
 
-// Manejo de señales de terminación
-const gracefulShutdown = () => {
-  console.log('Iniciando apagado graceful...');
+// Manejo de rutas no encontradas
+app.use((req, res) => {
+  res.status(404).json({
+    error: 'Ruta no encontrada',
+    path: req.path
+  });
+});
+
+// Inicialización del servidor con manejo de errores
+const server = app.listen(PORT, () => {
+  console.log(`Servidor iniciado en puerto ${PORT}`);
+}).on('error', (err) => {
+  console.error('Error al iniciar el servidor:', err);
+  process.exit(1);
+});
+
+// Manejo graceful de shutdown
+const shutdown = (signal) => {
+  console.log(`${signal} recibido. Iniciando shutdown graceful...`);
+  
   server.close(() => {
-    console.log('Servidor cerrado.');
+    console.log('Servidor HTTP cerrado.');
     process.exit(0);
   });
 
-  // Si el servidor no se cierra en 10 segundos, forzar cierre
+  // Forzar cierre si toma demasiado tiempo
   setTimeout(() => {
-    console.error('No se pudo cerrar el servidor, forzando salida');
+    console.error('Forzando cierre después de timeout');
     process.exit(1);
   }, 10000);
 };
 
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
-// Iniciar servidor con manejo de errores
-const server = app.listen(process.env.PORT || 8080, () => {
-  console.log(`Servidor iniciado en puerto ${process.env.PORT || 8080}`);
+// Manejo de errores no capturados
+process.on('uncaughtException', (err) => {
+  console.error('Error no capturado:', err);
+  shutdown('uncaughtException');
 });
 
-// Configurar timeouts del servidor
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Promesa rechazada no manejada:', reason);
+});
+
+// Configuración de timeouts del servidor
 server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;

@@ -1,22 +1,55 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  SERVICE_NAME: mercadoanalytics
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Deploy to Cloud Run
-        uses: google-github-actions/deploy-cloudrun@v1
-        with:
-          service: mercadoanalytics
-          region: us-central1
-          image: gcr.io/${{ secrets.GCP_PROJECT_ID }}/mercadoanalytics:${{ github.sha }}
-          flags: >-
-            --port=8080
-            --allow-unauthenticated
-            --timeout=300s
-            --memory=512Mi
-            --cpu=1
-            --min-instances=0
-            --max-instances=10
-            --concurrency=80
-            --cpu-throttling
-            --set-env-vars=NODE_ENV=production
-          service-account: ${{ secrets.GCP_SA_EMAIL }} 
+    - uses: actions/checkout@v4
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+
+    - name: Authorize Docker push
+      run: gcloud auth configure-docker
+
+    - name: Build and push container
+      run: |
+        docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} .
+        docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+
+    - name: Deploy to Cloud Run
+      id: deploy
+      uses: google-github-actions/deploy-cloudrun@v1
+      with:
+        service: ${{ env.SERVICE_NAME }}
+        region: ${{ env.REGION }}
+        image: gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+        flags: |
+          --port=8080
+          --allow-unauthenticated
+          --memory=1Gi
+          --cpu=1
+          --min-instances=0
+          --max-instances=10
+          --concurrency=80
+          --timeout=300
+          --set-env-vars=NODE_ENV=production,PORT=8080,ML_CLIENT_ID=${{ secrets.ML_CLIENT_ID }},ML_CLIENT_SECRET=${{ secrets.ML_CLIENT_SECRET }},ML_REDIRECT_URI=${{ secrets.ML_REDIRECT_URI }}
+          --execution-environment=gen2
+          --use-http2
+
+    - name: Show Output
+      run: echo ${{ steps.deploy.outputs.url }} 
