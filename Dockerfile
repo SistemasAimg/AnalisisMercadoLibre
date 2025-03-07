@@ -1,42 +1,32 @@
 # Build stage
-FROM node:20-alpine as build
-
+FROM node:20-alpine AS builder
 WORKDIR /app
-
-# Copy package files and install dependencies
 COPY package*.json ./
 RUN npm ci
-
-# Copy source code
 COPY . .
-
-# Build the application
 RUN npm run build
 
 # Production stage
 FROM node:20-alpine
-
 WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=8080
 
-# Copy package files and install only production dependencies
-COPY package*.json ./
-RUN npm ci --production
+# Copiar solo los archivos necesarios
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/server.js ./
 
-# Copy built assets and server files
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/server.js ./server.js
+# Instalar solo dependencias de producción
+RUN npm ci --only=production && \
+    npm cache clean --force
 
-# Expose port
+# Configurar healthcheck
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+
+# Exponer puerto
 EXPOSE 8080
 
-# Set environment variables
-ENV PORT=8080
-ENV NODE_ENV=production
-ENV HOST=0.0.0.0
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-  CMD wget -qO- http://localhost:8080/ || exit 1
-
-# Start the server
-CMD ["node", "server.js"]
+# Comando de inicio con opciones optimizadas de Node
+CMD ["node", "--optimize_for_size", "--max_old_space_size=460", "--gc_interval=100", "server.js"]

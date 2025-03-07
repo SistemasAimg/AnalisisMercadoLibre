@@ -1,0 +1,22 @@
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v1
+        with:
+          service: mercadoanalytics
+          region: us-central1
+          image: gcr.io/${{ secrets.GCP_PROJECT_ID }}/mercadoanalytics:${{ github.sha }}
+          flags: >-
+            --port=8080
+            --allow-unauthenticated
+            --timeout=300s
+            --memory=512Mi
+            --cpu=1
+            --min-instances=0
+            --max-instances=10
+            --concurrency=80
+            --cpu-throttling
+            --set-env-vars=NODE_ENV=production
+          service-account: ${{ secrets.GCP_SA_EMAIL }} 

@@ -257,7 +257,43 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-// Iniciar el servidor
-app.listen(PORT, HOST, () => {
-  console.log(`Servidor ejecutándose en http://${HOST}:${PORT}`);
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
 });
+
+// Manejo de errores mejorado
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(err.status || 500).json({
+    error: err.message || 'Error interno del servidor',
+    details: process.env.NODE_ENV === 'development' ? err : undefined
+  });
+});
+
+// Manejo de señales de terminación
+const gracefulShutdown = () => {
+  console.log('Iniciando apagado graceful...');
+  server.close(() => {
+    console.log('Servidor cerrado.');
+    process.exit(0);
+  });
+
+  // Si el servidor no se cierra en 10 segundos, forzar cierre
+  setTimeout(() => {
+    console.error('No se pudo cerrar el servidor, forzando salida');
+    process.exit(1);
+  }, 10000);
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
+// Iniciar servidor con manejo de errores
+const server = app.listen(process.env.PORT || 8080, () => {
+  console.log(`Servidor iniciado en puerto ${process.env.PORT || 8080}`);
+});
+
+// Configurar timeouts del servidor
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;
