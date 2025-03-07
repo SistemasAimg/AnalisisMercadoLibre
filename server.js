@@ -16,6 +16,33 @@ app.use(express.json());
 // Log para depuración
 console.log(`Iniciando servidor en ${HOST}:${PORT}`);
 
+// Middleware para verificar token en las peticiones al proxy
+app.use('/api/proxy', async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader) {
+    return res.status(401).json({
+      error: 'Error en búsqueda de productos',
+      details: {
+        code: 'unauthorized',
+        message: 'authorization value not present'
+      }
+    });
+  }
+
+  try {
+    // Pasar el token a las peticiones a MercadoLibre
+    req.mlToken = authHeader.split(' ')[1];
+    next();
+  } catch (error) {
+    console.error('Error de autenticación:', error);
+    res.status(401).json({
+      error: 'Error de autenticación',
+      details: error.message
+    });
+  }
+});
+
 // Endpoint para intercambio de código por token
 app.post('/api/auth/token', async (req, res) => {
   try {
@@ -116,46 +143,24 @@ app.get('/api/proxy/search', async (req, res) => {
       });
     }
 
-    // Construir URL base
+    // Construir URL y parámetros
     const baseUrl = 'https://api.mercadolibre.com/sites/MLA/search';
-    
-    // Construir parámetros
-    const params = new URLSearchParams();
-    if (q) params.append('q', q);
-    if (category) params.append('category', category);
-    
-    // Asegurarse de que limit y offset sean números válidos
-    const limitNum = Math.min(50, Math.max(1, parseInt(limit.toString()) || 50));
-    const offsetNum = Math.max(0, parseInt(offset.toString()) || 0);
-    
-    params.append('limit', limitNum.toString());
-    params.append('offset', offsetNum.toString());
+    const params = new URLSearchParams(req.query);
 
-    // Realizar la búsqueda
-    const response = await axios.get(`${baseUrl}?${params.toString()}`);
-
-    // Procesar y enviar respuesta
-    res.json({
-      results: response.data.results,
-      paging: {
-        total: response.data.paging.total,
-        offset: response.data.paging.offset,
-        limit: response.data.paging.limit
+    // Realizar la petición a MercadoLibre con el token
+    const response = await axios.get(`${baseUrl}?${params.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${req.mlToken}`
       }
     });
+
+    res.json(response.data);
   } catch (error) {
-    console.error('Error en búsqueda de productos:', error.message);
-    if (error.response) {
-      res.status(error.response.status).json({
-        error: 'Error en búsqueda de productos',
-        details: error.response.data
-      });
-    } else {
-      res.status(500).json({ 
-        error: 'Error en búsqueda de productos',
-        message: error.message 
-      });
-    }
+    console.error('Error en búsqueda de productos:', error);
+    res.status(error.response?.status || 500).json({
+      error: 'Error en búsqueda de productos',
+      details: error.response?.data || error.message
+    });
   }
 });
 

@@ -20,6 +20,22 @@ api.interceptors.request.use(async (config) => {
   return Promise.reject(error);
 });
 
+// Modificar la instancia de axios para el proxy
+const proxyApi = axios.create({
+  baseURL: PROXY_BASE_URL,
+});
+
+// Añadir interceptor para el token en las peticiones al proxy
+proxyApi.interceptors.request.use(async (config) => {
+  const token = await getAccessToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
+
 export interface Product {
   id: string;
   title: string;
@@ -110,7 +126,7 @@ export interface MarketAnalysis {
 // Función para obtener categorías
 export const getCategories = async (): Promise<Category[]> => {
   try {
-    const response = await axios.get(`${PROXY_BASE_URL}/categories`);
+    const response = await proxyApi.get('/categories');
     return response.data;
   } catch (error) {
     console.error('Error al obtener categorías:', error);
@@ -147,7 +163,7 @@ export const searchProducts = async (
       params.append('official_store', 'all');
     }
 
-    const response = await axios.get(`${PROXY_BASE_URL}/search`, { params });
+    const response = await proxyApi.get('/search', { params });
     return response.data;
   } catch (error) {
     console.error('Error en búsqueda de productos:', error);
