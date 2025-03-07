@@ -239,10 +239,9 @@ export interface ItemStats {
 }
 
 export interface ItemHistory {
-  price: number;
   date: string;
-  soldQuantity: number;
-  availableQuantity: number;
+  price: number;
+  available_quantity: number;
 }
 
 // Exportar las funciones que necesitamos
@@ -265,20 +264,46 @@ export async function getItemStats(itemId: string): Promise<ItemStats> {
   }
 }
 
-export async function getItemHistory(itemId: string): Promise<ItemHistory[]> {
+export const getItemHistory = async (itemId: string): Promise<ItemHistory[]> => {
   try {
     const response = await proxyApi.get(`/items/${itemId}/history`);
-    return response.data.map((record: any) => ({
-      price: record.price,
-      date: record.date,
-      soldQuantity: record.sold_quantity,
-      availableQuantity: record.available_quantity
+    
+    // Verificar la estructura de la respuesta
+    if (!response.data || !Array.isArray(response.data.price_history)) {
+      console.warn(`Estructura inesperada en historial para item ${itemId}:`, response.data);
+      return [];
+    }
+
+    // Transformar los datos al formato esperado
+    return response.data.price_history.map((entry: any) => ({
+      date: entry.date,
+      price: entry.price,
+      available_quantity: entry.available_quantity || 0
     }));
   } catch (error) {
     console.error(`Error al obtener historial del item ${itemId}:`, error);
-    throw error;
+    return []; // Retornar array vacío en caso de error
   }
-}
+};
+
+// Actualizar la función que procesa múltiples items
+const getItemsHistory = async (items: Product[]): Promise<Record<string, ItemHistory[]>> => {
+  const histories: Record<string, ItemHistory[]> = {};
+  
+  await Promise.all(
+    items.map(async (item) => {
+      try {
+        const history = await getItemHistory(item.id);
+        histories[item.id] = history;
+      } catch (error) {
+        console.error(`Error al obtener historial del item ${item.id}:`, error);
+        histories[item.id] = [];
+      }
+    })
+  );
+
+  return histories;
+};
 
 // Función para obtener detalles del vendedor
 async function getSellerDetails(sellerId: number): Promise<SellerReputation> {
@@ -368,8 +393,17 @@ export const getMarketAnalysis = async (
       }
     }
 
+    // Obtener historiales
+    const histories = await getItemsHistory(allProducts);
+    
+    // Procesar los datos con el historial
+    const productsWithHistory = allProducts.map(product => ({
+      ...product,
+      history: histories[product.id] || []
+    }));
+
     // Calcular tendencias reales basadas en historiales
-    const allHistories = productDetails.flatMap(detail => detail.history);
+    const allHistories = productsWithHistory.map(item => item.history);
     const sortedHistories = allHistories.sort((a, b) => 
       new Date(a.date).getTime() - new Date(b.date).getTime()
     );
@@ -379,7 +413,7 @@ export const getMarketAnalysis = async (
 
     // Calcular nivel de competencia basado en datos reales
     const competitionLevel = calculateCompetitionLevel(
-      allProducts,
+      productsWithHistory,
       productDetails.map(detail => detail.sellerDetails)
     );
 
@@ -388,7 +422,7 @@ export const getMarketAnalysis = async (
 
     // Generar recomendaciones basadas en datos reales
     const recommendations = generateRecommendations(
-      allProducts,
+      productsWithHistory,
       productDetails,
       salesTrend,
       competitionLevel
@@ -397,7 +431,7 @@ export const getMarketAnalysis = async (
     return {
       averagePrice,
       priceRange: { min: minPrice, max: maxPrice },
-      totalSellers: new Set(allProducts.map(item => item.seller.id)).size,
+      totalSellers: new Set(productsWithHistory.map(item => item.seller.id)).size,
       officialStores: {
         total: officialStoresMap.size,
         stores: Array.from(officialStoresMap.values()).map(store => ({
@@ -407,7 +441,7 @@ export const getMarketAnalysis = async (
           averagePrice: store.totalPrice / store.products.length,
           metrics: store.metrics
         })),
-        percentage: (officialStoresMap.size / allProducts.length) * 100
+        percentage: (officialStoresMap.size / productsWithHistory.length) * 100
       },
       totalListings: initialSearch.paging.total,
       priceHistory: sortedHistories,

@@ -186,6 +186,47 @@ app.get('/api/proxy/items/:id', async (req, res) => {
   }
 });
 
+// Endpoint para obtener el historial de un item
+app.get('/api/proxy/items/:itemId/history', async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    
+    // Obtener historial de precios
+    const priceResponse = await axios.get(
+      `https://api.mercadolibre.com/items/${itemId}/history`, 
+      {
+        headers: {
+          Authorization: `Bearer ${req.mlToken}`
+        }
+      }
+    );
+
+    // Obtener información de visitas
+    const visitsResponse = await axios.get(
+      `https://api.mercadolibre.com/items/${itemId}/visits/time_window?last=30&unit=day`,
+      {
+        headers: {
+          Authorization: `Bearer ${req.mlToken}`
+        }
+      }
+    );
+
+    // Combinar la información
+    const response = {
+      price_history: priceResponse.data.price_history || [],
+      visits: visitsResponse.data.results || []
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error('Error al obtener historial del item:', error);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener historial del item',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
 // Endpoint para webhooks de MercadoLibre
 app.post('/api/webhooks/mercadolibre', (req, res) => {
   console.log('Webhook recibido:', req.body);
