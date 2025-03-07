@@ -7,12 +7,22 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
+  build: {
+    outDir: 'dist',
+    assetsDir: 'assets',
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom', 'react-query'],
+        },
+      },
+    },
+  },
   server: {
-    // Configuración para manejar rutas en desarrollo
-    historyApiFallback: true,
+    port: 5173,
   },
   preview: {
-    // Configuración para manejar rutas en preview
-    historyApiFallback: true,
+    port: 4173,
   },
 });

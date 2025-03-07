@@ -21,15 +21,19 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies (including production)
-RUN npm install --ignore-scripts
+# Install production dependencies only
+RUN npm ci --only=production
 
 # Copy built assets and server files
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.js ./server.js
 
-# Create logs directory
-RUN mkdir -p logs
+# Create logs directory and set permissions
+RUN mkdir -p logs && \
+    chown -R node:node /app
+
+# Switch to non-root user
+USER node
 
 # Expose port
 EXPOSE 8080

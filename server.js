@@ -390,7 +390,25 @@ app.get('/api/proxy/domain_discovery', async (req, res) => {
 });
 
 // Servir archivos estáticos
-app.use(express.static(path.join(__dirname, 'dist')));
+app.use(express.static(path.join(__dirname, 'dist'), {
+  index: false,
+  setHeaders: (res, path) => {
+    // Set proper cache headers for static assets
+    if (path.endsWith('.js') || path.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+    }
+  }
+}));
+
+// Middleware para manejar errores de archivos estáticos
+app.use((err, req, res, next) => {
+  if (err.status === 404) {
+    // Si el archivo no se encuentra, servir el index.html
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  } else {
+    next(err);
+  }
+});
 
 // Todas las demás rutas sirven el index.html para el enrutamiento del lado del cliente
 app.get('*', (req, res) => {
