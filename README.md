@@ -1,107 +1,79 @@
 # MercadoAnalytics
 
-A powerful analytics tool for MercadoLibre that provides market insights, product analysis, and trend tracking.
+Herramienta de análisis de mercado para MercadoLibre Argentina. Analiza precios, tendencias y competencia.
 
-## Features
+## Despliegue en Google Cloud Run
 
-- Product search and filtering
-- Market analysis and insights
-- Trend tracking
-- Category-based browsing
-- Webhook integration for real-time updates
-- Authentication with MercadoLibre
+Esta aplicación está configurada para desplegarse automáticamente en Google Cloud Run utilizando GitHub Actions y Workload Identity Federation.
 
-## Prerequisites
+### Requisitos previos
 
-- Node.js (v18 or higher)
-- npm (v9 or higher)
-- A MercadoLibre Developer account
+1. Una cuenta de Google Cloud Platform con Cloud Run habilitado
+2. Un proyecto de GCP con la API de Cloud Run habilitada
+3. Una cuenta de servicio con los permisos necesarios:
+   - Cloud Run Admin
+   - Storage Admin
+   - Service Account User
 
-## Environment Variables
+### Configuración de secretos en GitHub
 
-Create a `.env` file in the root directory with the following variables:
+Para que el flujo de trabajo funcione, debes configurar los siguientes secretos en tu repositorio de GitHub:
 
-```env
-VITE_ML_CLIENT_ID=your_client_id
-VITE_ML_CLIENT_SECRET=your_client_secret
-VITE_ML_REDIRECT_URI=your_redirect_uri
-```
+- `GCP_PROJECT_ID`: El ID de tu proyecto de Google Cloud
+- `GCP_SA_EMAIL`: El email de la cuenta de servicio (ejemplo: `service-account@project-id.iam.gserviceaccount.com`)
+- `WIF_PROVIDER`: El ID del proveedor de identidad de Workload Identity Federation
 
-## Installation
+### Configuración de Workload Identity Federation
 
-1. Clone the repository:
+1. Crea un pool de proveedores de identidad:
+   ```
+   gcloud iam workload-identity-pools create "github-actions-pool" \
+     --project="${PROJECT_ID}" \
+     --location="global" \
+     --display-name="GitHub Actions Pool"
+   ```
+
+2. Crea un proveedor de identidad en el pool:
+   ```
+   gcloud iam workload-identity-pools providers create-oidc "github-actions-provider" \
+     --project="${PROJECT_ID}" \
+     --location="global" \
+     --workload-identity-pool="github-actions-pool" \
+     --display-name="GitHub Actions Provider" \
+     --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository" \
+     --issuer-uri="https://token.actions.githubusercontent.com"
+   ```
+
+3. Permite que la cuenta de servicio sea impersonada:
+   ```
+   gcloud iam service-accounts add-iam-policy-binding "${SERVICE_ACCOUNT_EMAIL}" \
+     --project="${PROJECT_ID}" \
+     --role="roles/iam.workloadIdentityUser" \
+     --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-actions-pool/attribute.repository/your-github-username/your-repo-name"
+   ```
+
+### Configuración de MercadoLibre (para desarrollo local)
+
+Para el desarrollo local y pruebas, necesitarás configurar las credenciales de MercadoLibre:
+
+1. Crea un archivo `.env` basado en `.env.example` con tus credenciales:
+   ```
+   VITE_ML_CLIENT_ID=your_client_id_here
+   VITE_ML_CLIENT_SECRET=your_client_secret_here
+   VITE_ML_REDIRECT_URI=http://localhost:5173/auth/callback
+   ```
+
+2. Estas variables son necesarias para la autenticación con MercadoLibre, pero no son requeridas para el despliegue en Cloud Run.
+
+## Desarrollo local
+
 ```bash
-git clone https://github.com/yourusername/mercado-analytics.git
-cd mercado-analytics
-```
-
-2. Install dependencies:
-```bash
+# Instalar dependencias
 npm install
-```
 
-3. Start the development server:
-```bash
+# Iniciar servidor de desarrollo
 npm run dev
-```
 
-4. Build for production:
-```bash
+# Construir para producción
 npm run build
 ```
-
-5. Start the production server:
-```bash
-npm start
-```
-
-## Testing
-
-Run tests:
-```bash
-npm test
-```
-
-Run tests with coverage:
-```bash
-npm run test:coverage
-```
-
-## Development
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run lint` - Run ESLint
-- `npm run typecheck` - Run TypeScript type checking
-- `npm run format` - Format code with Prettier
-
-## Project Structure
-
-```
-src/
-├── components/     # React components
-├── pages/         # Page components
-├── services/      # API services
-├── utils/         # Utility functions
-├── types/         # TypeScript type definitions
-└── mocks/         # Mock data for testing
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- [MercadoLibre API](https://developers.mercadolibre.com.ar/es_ar/api-docs-es)
-- [React](https://reactjs.org/)
-- [TypeScript](https://www.typescriptlang.org/)
-- [Tailwind CSS](https://tailwindcss.com/)

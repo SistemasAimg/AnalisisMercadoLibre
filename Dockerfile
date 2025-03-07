@@ -18,24 +18,13 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files and install only production dependencies
 COPY package*.json ./
-
-# Install production dependencies only
-RUN npm ci --omit=dev
+RUN npm ci --production
 
 # Copy built assets and server files
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.js ./server.js
-
-# Create logs directory and set permissions
-RUN mkdir -p logs && \
-    chown -R node:node /app && \
-    chmod -R 755 /app/dist && \
-    ls -la /app/dist
-
-# Switch to non-root user
-USER node
 
 # Expose port
 EXPOSE 8080
@@ -47,7 +36,7 @@ ENV HOST=0.0.0.0
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-  CMD wget -qO- http://localhost:8080/health || exit 1
+  CMD wget -qO- http://localhost:8080/ || exit 1
 
 # Start the server
 CMD ["node", "server.js"]
