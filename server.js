@@ -392,10 +392,11 @@ app.get('/api/proxy/domain_discovery', async (req, res) => {
 // Servir archivos estáticos
 app.use(express.static(path.join(__dirname, 'dist'), {
   index: false,
-  setHeaders: (res, path) => {
+  setHeaders: (res, filePath) => {
     // Set proper cache headers for static assets
-    if (path.endsWith('.js') || path.endsWith('.css')) {
+    if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
       res.setHeader('Cache-Control', 'public, max-age=31536000');
+      res.setHeader('Content-Type', filePath.endsWith('.js') ? 'application/javascript' : 'text/css');
     }
   }
 }));
@@ -417,7 +418,7 @@ app.get('*', (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  logger.error(err.stack);
+  logger.error('Error:', err.stack);
   res.status(500).json({
     error: 'Error interno del servidor',
     details: process.env.NODE_ENV === 'development' ? err.message : undefined
