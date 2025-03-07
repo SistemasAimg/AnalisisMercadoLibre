@@ -21,8 +21,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install only production dependencies
-RUN npm install --omit=dev --ignore-scripts
+# Install all dependencies (including production)
+RUN npm install --ignore-scripts
 
 # Copy built assets and server files
 COPY --from=build /app/dist ./dist
