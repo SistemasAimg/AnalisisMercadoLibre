@@ -9,9 +9,9 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   SERVICE_NAME: mercadoanalytics
   REGION: us-central1
-  VITE_ML_CLIENT_ID: ${{ secrets.ML_CLIENT_ID }}
-  VITE_ML_CLIENT_SECRET: ${{ secrets.ML_CLIENT_SECRET }}
-  VITE_ML_REDIRECT_URI: ${{ secrets.ML_REDIRECT_URI }}
+  ML_CLIENT_ID: ${{ secrets.ML_CLIENT_ID }}
+  ML_CLIENT_SECRET: ${{ secrets.ML_CLIENT_SECRET }}
+  ML_REDIRECT_URI: ${{ secrets.ML_REDIRECT_URI }}
 
 jobs:
   deploy:
@@ -49,7 +49,11 @@ jobs:
           service: ${{ env.SERVICE_NAME }}
           region: ${{ env.REGION }}
           image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
-          flags: --port=8080 --allow-unauthenticated --timeout=300s --set-env-vars=VITE_ML_CLIENT_ID=${{ env.VITE_ML_CLIENT_ID }},VITE_ML_CLIENT_SECRET=${{ env.VITE_ML_CLIENT_SECRET }},VITE_ML_REDIRECT_URI=${{ env.VITE_ML_REDIRECT_URI }}
+          env_vars: |
+            VITE_ML_CLIENT_ID=${{ env.ML_CLIENT_ID }}
+            VITE_ML_CLIENT_SECRET=${{ env.ML_CLIENT_SECRET }}
+            VITE_ML_REDIRECT_URI=${{ env.ML_REDIRECT_URI }}
+          flags: --port=8080 --allow-unauthenticated --timeout=300s
 
       - name: Show Output
         run: echo ${{ steps.deploy.outputs.url }}
