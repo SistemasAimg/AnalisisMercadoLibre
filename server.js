@@ -174,21 +174,14 @@ app.post('/api/auth/refresh', async (req, res) => {
 // Proxy para la API de MercadoLibre
 app.get('/api/proxy/trends', async (req, res) => {
   try {
-    logger.info('Solicitando tendencias a MercadoLibre');
     const response = await axios.get('https://api.mercadolibre.com/trends/MLA');
-    logger.info('Respuesta recibida de MercadoLibre');
     res.json(response.data);
   } catch (error) {
     logger.error('Error al obtener tendencias:', error.message);
-    if (error.response) {
-      logger.error('Detalles del error:', error.response.status, error.response.data);
-      res.status(error.response.status).json({
-        error: 'Error al obtener tendencias',
-        details: error.response.data
-      });
-    } else {
-      res.status(500).json({ error: 'Error al obtener tendencias' });
-    }
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener tendencias',
+      details: error.response?.data || error.message
+    });
   }
 });
 
@@ -265,6 +258,122 @@ app.get('/api/proxy/items/:id', async (req, res) => {
 app.post('/api/webhooks/mercadolibre', (req, res) => {
   logger.info('Webhook recibido:', req.body);
   return res.status(200).json({ status: 'ok' });
+});
+
+// Proxy para historial de precios
+app.get('/api/proxy/items/:id/price_history', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const response = await axios.get(`https://api.mercadolibre.com/items/${id}/price_history`);
+    res.json(response.data);
+  } catch (error) {
+    logger.error('Error al obtener historial de precios:', error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener historial de precios',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Proxy para visitas de producto
+app.get('/api/proxy/items/:id/visits', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const response = await axios.get(`https://api.mercadolibre.com/items/${id}/visits`);
+    res.json(response.data);
+  } catch (error) {
+    logger.error('Error al obtener visitas:', error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener visitas',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Proxy para información de vendedor
+app.get('/api/proxy/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const response = await axios.get(`https://api.mercadolibre.com/users/${id}`);
+    res.json(response.data);
+  } catch (error) {
+    logger.error('Error al obtener información del vendedor:', error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener información del vendedor',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Proxy para búsqueda con filtros avanzados
+app.get('/api/proxy/search/advanced', async (req, res) => {
+  try {
+    const { 
+      q, 
+      sort, 
+      official_store, 
+      state, 
+      category,
+      limit = 50,
+      offset = 0 
+    } = req.query;
+    
+    if (!q) {
+      return res.status(400).json({ error: 'Parámetro de búsqueda requerido' });
+    }
+
+    const accessToken = req.cookies?.ml_access_token;
+    if (!accessToken) {
+      return res.status(401).json({ 
+        error: 'No autorizado',
+        message: 'Token de acceso no encontrado en las cookies'
+      });
+    }
+
+    const response = await axios.get('https://api.mercadolibre.com/sites/MLA/search', {
+      params: {
+        q,
+        sort,
+        official_store,
+        state,
+        category,
+        limit,
+        offset
+      },
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    logger.error('Error en búsqueda avanzada:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Error en búsqueda avanzada',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Proxy para descubrimiento de categorías
+app.get('/api/proxy/domain_discovery', async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q) {
+      return res.status(400).json({ error: 'Parámetro de búsqueda requerido' });
+    }
+
+    const response = await axios.get('https://api.mercadolibre.com/sites/MLA/domain_discovery', {
+      params: { q }
+    });
+    res.json(response.data);
+  } catch (error) {
+    logger.error('Error al obtener categorías:', error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener categorías',
+      details: error.response?.data || error.message
+    });
+  }
 });
 
 // Servir archivos estáticos

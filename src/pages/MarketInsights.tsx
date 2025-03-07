@@ -63,22 +63,43 @@ interface MarketAnalysis {
     new: number;
     used: number;
   };
+  priceHistory: { date: string; price: number }[];
+  visits: { daily: number; weekly: number; monthly: number; total: number };
+  priceDistribution: { range: string; percentage: number }[];
+  topSellers: { id: string; nickname: string; salesCount: number; reputation: number; level: number }[];
+  officialStores: { total: number; percentage: number; stores: { id: string; name: string; productsCount: number; averagePrice: number }[] };
+  marketMetrics: { topProvinces: { id: string; name: string; itemsCount: number; averagePrice: number }[] };
+  trends: { keyword: string; itemsCount: number; averagePrice: number }[];
 }
 
 const MarketInsights: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [analysis, setAnalysis] = useState<MarketAnalysis | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Query para tendencias
-  const { data: trends, isLoading: trendsLoading } = useQuery<Trend[]>(
-    'trends',
+  // Query para análisis de mercado
+  const { data: marketAnalysis, isLoading: analysisLoading } = useQuery<MarketAnalysis>(
+    ['marketAnalysis', searchTerm, selectedCategory],
     async () => {
-      const response = await axios.get('/api/proxy/trends');
-      return response.data;
+      if (!searchTerm && !selectedCategory) return null;
+      setIsLoading(true);
+      setError(null);
+      try {
+        const analysis = await getMarketAnalysis(searchTerm || selectedCategory);
+        setAnalysis(analysis);
+        return analysis;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Error al obtener análisis de mercado');
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
     },
     {
-      staleTime: 1000 * 60 * 60, // 1 hora
+      enabled: !!searchTerm || !!selectedCategory,
+      staleTime: 1000 * 60 * 5, // 5 minutos
     }
   );
 
@@ -94,98 +115,65 @@ const MarketInsights: React.FC = () => {
     }
   );
 
-  // Query para búsqueda de productos
-  const { data: searchResults, isLoading: searchLoading } = useQuery<{ results: Product[], paging: { total: number } }>(
-    ['search', searchTerm, selectedCategory],
-    async () => {
-      if (!searchTerm && !selectedCategory) return { results: [], paging: { total: 0 } };
-      
-      const response = await axios.get('/api/proxy/search', {
-        params: {
-          q: searchTerm,
-          category: selectedCategory,
-          limit: 50
-        }
-      });
-      return response.data;
-    },
-    {
-      enabled: !!searchTerm || !!selectedCategory,
-      staleTime: 1000 * 60 * 5, // 5 minutos
-    }
-  );
-
-  // Analizar datos del mercado
-  useEffect(() => {
-    if (searchResults?.results) {
-      const products = searchResults.results;
-      const prices = products.map(p => p.price);
-      
-      const analysis: MarketAnalysis = {
-        averagePrice: prices.reduce((a, b) => a + b, 0) / prices.length,
-        totalItems: products.length,
-        totalSellers: new Set(products.map(p => p.seller_id)).size,
-        priceRange: {
-          min: Math.min(...prices),
-          max: Math.max(...prices)
-        },
-        conditionDistribution: {
-          new: products.filter(p => p.condition === 'new').length,
-          used: products.filter(p => p.condition === 'used').length
-        }
-      };
-      
-      setAnalysis(analysis);
-    }
-  }, [searchResults]);
-
-  // Datos para el gráfico de precios
+  // Gráfico de precios
   const priceChartData = {
-    labels: searchResults?.results.map(p => p.title.substring(0, 20) + '...') || [],
+    labels: marketAnalysis?.priceHistory.map(item => new Date(item.date).toLocaleDateString()) || [],
     datasets: [
       {
-        label: 'Precios',
-        data: searchResults?.results.map(p => p.price) || [],
+        label: 'Historial de Precios',
+        data: marketAnalysis?.priceHistory.map(item => item.price) || [],
         borderColor: 'rgb(75, 192, 192)',
         tension: 0.1
       }
     ]
   };
 
-  // Datos para el gráfico de condición
-  const conditionChartData = {
-    labels: ['Nuevo', 'Usado'],
+  // Gráfico de visitas
+  const visitsChartData = {
+    labels: ['Diarias', 'Semanales', 'Mensuales'],
     datasets: [
       {
-        data: analysis ? [analysis.conditionDistribution.new, analysis.conditionDistribution.used] : [0, 0],
-        backgroundColor: ['rgb(75, 192, 192)', 'rgb(255, 99, 132)']
+        label: 'Visitas',
+        data: marketAnalysis ? [
+          marketAnalysis.visits.daily,
+          marketAnalysis.visits.weekly,
+          marketAnalysis.visits.monthly
+        ] : [],
+        backgroundColor: 'rgba(54, 162, 235, 0.5)',
+      }
+    ]
+  };
+
+  // Gráfico de distribución de precios
+  const priceDistributionData = {
+    labels: marketAnalysis?.priceDistribution.map(item => item.range) || [],
+    datasets: [
+      {
+        label: 'Distribución de Precios',
+        data: marketAnalysis?.priceDistribution.map(item => item.percentage) || [],
+        backgroundColor: 'rgba(255, 99, 132, 0.5)',
       }
     ]
   };
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold text-gray-800 mb-8">Análisis de Mercado</h1>
-
+      <h1 className="text-3xl font-bold mb-8">Análisis de Mercado</h1>
+      
       {/* Búsqueda y Filtros */}
       <div className="mb-8">
-        <div className="flex gap-4 mb-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-              <input
-                type="text"
-                placeholder="Buscar productos..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
+        <div className="flex gap-4">
+          <input
+            type="text"
+            placeholder="Buscar productos..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="flex-1 p-2 border rounded"
+          />
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="p-2 border rounded"
           >
             <option value="">Todas las categorías</option>
             {categories?.map(category => (
@@ -197,108 +185,116 @@ const MarketInsights: React.FC = () => {
         </div>
       </div>
 
-      {/* Tendencias */}
-      <div className="mb-8">
-        <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
-          <TrendingUp className="mr-2" size={24} />
-          Tendencias
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {trends?.map(trend => (
-            <a
-              key={trend.keyword}
-              href={trend.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow"
-            >
-              <h3 className="font-medium text-gray-800">{trend.keyword}</h3>
-            </a>
-          ))}
-        </div>
-      </div>
-
-      {/* Análisis de Mercado */}
-      {analysis && (
-        <div className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Análisis de Mercado</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-4 bg-white rounded-lg shadow">
-              <div className="flex items-center mb-2">
-                <DollarSign className="mr-2 text-green-500" size={24} />
-                <h3 className="font-medium text-gray-800">Precio Promedio</h3>
-              </div>
-              <p className="text-2xl font-bold text-gray-900">
-                ${analysis.averagePrice.toLocaleString()}
-              </p>
-            </div>
-            <div className="p-4 bg-white rounded-lg shadow">
-              <div className="flex items-center mb-2">
-                <Package className="mr-2 text-blue-500" size={24} />
-                <h3 className="font-medium text-gray-800">Total de Productos</h3>
-              </div>
-              <p className="text-2xl font-bold text-gray-900">
-                {analysis.totalItems}
-              </p>
-            </div>
-            <div className="p-4 bg-white rounded-lg shadow">
-              <div className="flex items-center mb-2">
-                <ShoppingCart className="mr-2 text-purple-500" size={24} />
-                <h3 className="font-medium text-gray-800">Vendedores</h3>
-              </div>
-              <p className="text-2xl font-bold text-gray-900">
-                {analysis.totalSellers}
-              </p>
-            </div>
-            <div className="p-4 bg-white rounded-lg shadow">
-              <div className="flex items-center mb-2">
-                <Star className="mr-2 text-yellow-500" size={24} />
-                <h3 className="font-medium text-gray-800">Rango de Precios</h3>
-              </div>
-              <p className="text-sm text-gray-600">
-                Min: ${analysis.priceRange.min.toLocaleString()}
-                <br />
-                Max: ${analysis.priceRange.max.toLocaleString()}
-              </p>
-            </div>
-          </div>
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          {error}
         </div>
       )}
 
-      {/* Gráficos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Distribución de Precios</h2>
-          <Line data={priceChartData} />
+      {isLoading && (
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Distribución por Condición</h2>
-          <Bar data={conditionChartData} />
-        </div>
-      </div>
+      )}
 
-      {/* Lista de Productos */}
-      {searchResults?.results && (
-        <div className="mt-8">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Productos Encontrados</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {searchResults.results.map(product => (
-              <div key={product.id} className="bg-white p-4 rounded-lg shadow">
-                <img
-                  src={product.thumbnail}
-                  alt={product.title}
-                  className="w-full h-48 object-contain mb-4"
-                />
-                <h3 className="font-medium text-gray-800 mb-2">{product.title}</h3>
-                <p className="text-xl font-bold text-gray-900 mb-2">
-                  ${product.price.toLocaleString()}
-                </p>
-                <div className="flex justify-between text-sm text-gray-600">
-                  <span>Stock: {product.available_quantity}</span>
-                  <span>Vendidos: {product.sold_quantity}</span>
+      {marketAnalysis && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Métricas Principales */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">Métricas Principales</h2>
+            <div className="space-y-2">
+              <p>Precio Promedio: ${marketAnalysis.averagePrice.toFixed(2)}</p>
+              <p>Rango de Precios: ${marketAnalysis.priceRange.min.toFixed(2)} - ${marketAnalysis.priceRange.max.toFixed(2)}</p>
+              <p>Total de Vendedores: {marketAnalysis.totalSellers}</p>
+              <p>Total de Listados: {marketAnalysis.totalListings}</p>
+            </div>
+          </div>
+
+          {/* Visitas */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">Visitas</h2>
+            <div className="h-64">
+              <Bar data={visitsChartData} options={{ maintainAspectRatio: false }} />
+            </div>
+            <div className="mt-4 space-y-2">
+              <p>Total de Visitas: {marketAnalysis.visits.total}</p>
+              <p>Promedio por Producto: {marketAnalysis.visits.daily}</p>
+            </div>
+          </div>
+
+          {/* Historial de Precios */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">Historial de Precios</h2>
+            <div className="h-64">
+              <Line data={priceChartData} options={{ maintainAspectRatio: false }} />
+            </div>
+          </div>
+
+          {/* Distribución de Precios */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">Distribución de Precios</h2>
+            <div className="h-64">
+              <Bar data={priceDistributionData} options={{ maintainAspectRatio: false }} />
+            </div>
+          </div>
+
+          {/* Top Vendedores */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">Top Vendedores</h2>
+            <div className="space-y-4">
+              {marketAnalysis.topSellers.slice(0, 5).map(seller => (
+                <div key={seller.id} className="border-b pb-2">
+                  <p className="font-semibold">{seller.nickname}</p>
+                  <p>Ventas: {seller.salesCount}</p>
+                  <p>Reputación: {seller.reputation}</p>
+                  <p>Nivel: {seller.level}</p>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
+          </div>
+
+          {/* Tiendas Oficiales */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">Tiendas Oficiales</h2>
+            <div className="space-y-4">
+              <p>Total: {marketAnalysis.officialStores.total}</p>
+              <p>Porcentaje: {marketAnalysis.officialStores.percentage.toFixed(1)}%</p>
+              {marketAnalysis.officialStores.stores.slice(0, 3).map(store => (
+                <div key={store.id} className="border-b pb-2">
+                  <p className="font-semibold">{store.name}</p>
+                  <p>Productos: {store.productsCount}</p>
+                  <p>Precio Promedio: ${store.averagePrice.toFixed(2)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Top Provincias */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">Top Provincias</h2>
+            <div className="space-y-4">
+              {marketAnalysis.marketMetrics.topProvinces.map(province => (
+                <div key={province.id} className="border-b pb-2">
+                  <p className="font-semibold">{province.name}</p>
+                  <p>Productos: {province.itemsCount}</p>
+                  <p>Precio Promedio: ${province.averagePrice.toFixed(2)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Tendencias */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">Tendencias</h2>
+            <div className="space-y-4">
+              {marketAnalysis.trends.slice(0, 5).map(trend => (
+                <div key={trend.keyword} className="border-b pb-2">
+                  <p className="font-semibold">{trend.keyword}</p>
+                  <p>Productos: {trend.itemsCount}</p>
+                  <p>Precio Promedio: ${trend.averagePrice.toFixed(2)}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

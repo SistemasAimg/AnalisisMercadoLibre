@@ -76,12 +76,16 @@ export interface PriceHistory {
 }
 
 export interface MarketAnalysis {
+  // Métricas básicas (reales)
   averagePrice: number;
   priceRange: {
     min: number;
     max: number;
   };
   totalSellers: number;
+  totalListings: number;
+  
+  // Métricas de tiendas oficiales (reales)
   officialStores: {
     total: number;
     stores: Array<{
@@ -89,31 +93,95 @@ export interface MarketAnalysis {
       name: string;
       productsCount: number;
       averagePrice: number;
+      reputation: string;
+      level: string;
     }>;
     percentage: number;
   };
-  totalListings: number;
-  priceHistory: PriceHistory[];
-  salesTrend: number;
-  competitionLevel: 'low' | 'medium' | 'high';
-  recommendations: string[];
-  topSellers: {
+
+  // Historial de precios (real)
+  priceHistory: Array<{
+    date: string;
+    price: number;
+    currency_id: string;
+  }>;
+
+  // Métricas de visitas (real)
+  visits: {
+    total: number;
+    daily: number;
+    weekly: number;
+    monthly: number;
+  };
+
+  // Análisis de vendedores (real)
+  topSellers: Array<{
     id: number;
     nickname: string;
     salesCount: number;
     reputation: string;
+    level: string;
     isOfficialStore: boolean;
-  }[];
-  priceDistribution: {
+    location: {
+      city: string;
+      state: string;
+    };
+    registrationDate: string;
+    sellerReputation: {
+      levelId: string;
+      powerSellerStatus: string;
+      transactions: {
+        completed: number;
+        canceled: number;
+        period: string;
+        ratings: {
+          positive: number;
+          negative: number;
+          neutral: number;
+        };
+      };
+    };
+  }>;
+
+  // Distribución de precios (real)
+  priceDistribution: Array<{
     range: string;
     count: number;
     percentage: number;
-  }[];
-  conditionBreakdown: {
+  }>;
+
+  // Condiciones de productos (real)
+  conditionBreakdown: Array<{
     condition: string;
     count: number;
     percentage: number;
-  }[];
+  }>;
+
+  // Métricas de mercado (real)
+  marketMetrics: {
+    totalVisits: number;
+    averageVisitsPerProduct: number;
+    topCategories: Array<{
+      id: string;
+      name: string;
+      itemsCount: number;
+      averagePrice: number;
+    }>;
+    topProvinces: Array<{
+      id: string;
+      name: string;
+      itemsCount: number;
+      averagePrice: number;
+    }>;
+  };
+
+  // Tendencias (real)
+  trends: Array<{
+    keyword: string;
+    url: string;
+    itemsCount: number;
+    averagePrice: number;
+  }>;
 }
 
 // Función para obtener categorías
@@ -374,4 +442,229 @@ export const getMarketAnalysis = async (
     console.error('Error al realizar análisis de mercado:', error);
     throw error;
   }
+};
+
+// Obtener historial de precios de un producto
+export const getItemPriceHistory = async (itemId: string): Promise<Array<{
+  date: string;
+  price: number;
+  currency_id: string;
+}>> => {
+  const response = await api.get(`${PROXY_BASE_URL}/items/${itemId}/price_history`);
+  return response.data;
+};
+
+// Obtener visitas de un producto
+export const getItemVisits = async (itemId: string): Promise<{
+  total: number;
+  daily: number;
+  weekly: number;
+  monthly: number;
+}> => {
+  const response = await api.get(`${PROXY_BASE_URL}/items/${itemId}/visits`);
+  return response.data;
+};
+
+// Obtener información detallada de un vendedor
+export const getUserInfo = async (userId: string): Promise<{
+  id: number;
+  nickname: string;
+  registration_date: string;
+  country_id: string;
+  address: {
+    city: string;
+    state: string;
+  };
+  user_type: string;
+  tags: string[];
+  logo: string | null;
+  points: number;
+  site_id: string;
+  permalink: string;
+  seller_reputation: {
+    level_id: string;
+    power_seller_status: string;
+    transactions: {
+      completed: number;
+      canceled: number;
+      period: string;
+      ratings: {
+        positive: number;
+        negative: number;
+        neutral: number;
+      };
+    };
+  };
+}> => {
+  const response = await api.get(`${PROXY_BASE_URL}/users/${userId}`);
+  return response.data;
+};
+
+// Búsqueda avanzada con filtros
+export const advancedSearch = async (params: {
+  q: string;
+  sort?: string;
+  official_store?: string;
+  state?: string;
+  category?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  results: Product[];
+  paging: {
+    total: number;
+    offset: number;
+    limit: number;
+  };
+}> => {
+  const response = await api.get(`${PROXY_BASE_URL}/search/advanced`, { params });
+  return response.data;
+};
+
+// Obtener categorías por término de búsqueda
+export const getCategoriesByQuery = async (query: string): Promise<Array<{
+  domain_id: string;
+  domain_name: string;
+  category_id: string;
+  category_name: string;
+}>> => {
+  const response = await api.get(`${PROXY_BASE_URL}/domain_discovery`, {
+    params: { q: query }
+  });
+  return response.data;
+};
+
+// Función para obtener análisis de mercado completo
+export const getMarketAnalysis = async (query: string): Promise<MarketAnalysis> => {
+  // Obtener resultados de búsqueda
+  const searchResults = await advancedSearch({
+    q: query,
+    limit: 50
+  });
+
+  // Obtener tendencias
+  const trends = await getTrends();
+
+  // Obtener información de vendedores únicos
+  const uniqueSellers = new Set(searchResults.results.map(item => item.seller_id));
+  const sellersInfo = await Promise.all(
+    Array.from(uniqueSellers).map(id => getUserInfo(id.toString()))
+  );
+
+  // Obtener visitas y precios para los primeros 10 productos
+  const topProducts = searchResults.results.slice(0, 10);
+  const [visits, priceHistory] = await Promise.all([
+    Promise.all(topProducts.map(item => getItemVisits(item.id))),
+    Promise.all(topProducts.map(item => getItemPriceHistory(item.id)))
+  ]);
+
+  // Calcular métricas
+  const prices = searchResults.results.map(item => item.price);
+  const averagePrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+
+  // Calcular distribución de precios
+  const priceRanges = [
+    { min: 0, max: averagePrice * 0.5, label: '0-50%' },
+    { min: averagePrice * 0.5, max: averagePrice, label: '50-100%' },
+    { min: averagePrice, max: averagePrice * 1.5, label: '100-150%' },
+    { min: averagePrice * 1.5, max: Infinity, label: '150%+' }
+  ];
+
+  const priceDistribution = priceRanges.map(range => ({
+    range: range.label,
+    count: prices.filter(p => p >= range.min && p < range.max).length,
+    percentage: (prices.filter(p => p >= range.min && p < range.max).length / prices.length) * 100
+  }));
+
+  // Calcular métricas de visitas
+  const totalVisits = visits.reduce((sum, visit) => sum + visit.total, 0);
+  const averageVisitsPerProduct = totalVisits / visits.length;
+
+  // Calcular métricas por provincia
+  const provinces = new Map<string, { count: number; totalPrice: number }>();
+  searchResults.results.forEach(item => {
+    const province = item.seller_address?.state?.name || 'Sin ubicación';
+    const current = provinces.get(province) || { count: 0, totalPrice: 0 };
+    provinces.set(province, {
+      count: current.count + 1,
+      totalPrice: current.totalPrice + item.price
+    });
+  });
+
+  const topProvinces = Array.from(provinces.entries())
+    .map(([name, data]) => ({
+      id: name,
+      name,
+      itemsCount: data.count,
+      averagePrice: data.totalPrice / data.count
+    }))
+    .sort((a, b) => b.itemsCount - a.itemsCount)
+    .slice(0, 5);
+
+  // Calcular métricas de tiendas oficiales
+  const officialStores = searchResults.results.filter(item => item.official_store_id);
+  const officialStoresInfo = await Promise.all(
+    officialStores.map(item => getUserInfo(item.seller_id.toString()))
+  );
+
+  return {
+    averagePrice,
+    priceRange: {
+      min: Math.min(...prices),
+      max: Math.max(...prices)
+    },
+    totalSellers: uniqueSellers.size,
+    totalListings: searchResults.paging.total,
+    officialStores: {
+      total: officialStores.length,
+      stores: officialStoresInfo.map(store => ({
+        id: store.id,
+        name: store.nickname,
+        productsCount: searchResults.results.filter(item => item.seller_id === store.id).length,
+        averagePrice: searchResults.results
+          .filter(item => item.seller_id === store.id)
+          .reduce((sum, item) => sum + item.price, 0) / 
+          searchResults.results.filter(item => item.seller_id === store.id).length,
+        reputation: store.seller_reputation.level_id,
+        level: store.seller_reputation.power_seller_status
+      })),
+      percentage: (officialStores.length / searchResults.results.length) * 100
+    },
+    priceHistory: priceHistory.flat(),
+    visits: {
+      total: totalVisits,
+      daily: visits.reduce((sum, visit) => sum + visit.daily, 0),
+      weekly: visits.reduce((sum, visit) => sum + visit.weekly, 0),
+      monthly: visits.reduce((sum, visit) => sum + visit.monthly, 0)
+    },
+    topSellers: sellersInfo.map(seller => ({
+      id: seller.id,
+      nickname: seller.nickname,
+      salesCount: seller.seller_reputation.transactions.completed,
+      reputation: seller.seller_reputation.level_id,
+      level: seller.seller_reputation.power_seller_status,
+      isOfficialStore: seller.user_type === 'brand',
+      location: seller.address,
+      registrationDate: seller.registration_date,
+      sellerReputation: seller.seller_reputation
+    })),
+    priceDistribution,
+    conditionBreakdown: Object.entries(
+      searchResults.results.reduce((acc, item) => {
+        acc[item.condition] = (acc[item.condition] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>)
+    ).map(([condition, count]) => ({
+      condition,
+      count,
+      percentage: (count / searchResults.results.length) * 100
+    })),
+    marketMetrics: {
+      totalVisits,
+      averageVisitsPerProduct,
+      topCategories: [], // Se puede implementar con domain_discovery
+      topProvinces
+    },
+    trends
+  };
 };
