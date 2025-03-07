@@ -393,16 +393,37 @@ app.get('/api/proxy/domain_discovery', async (req, res) => {
 app.use(express.static(path.join(__dirname, 'dist'), {
   index: false,
   setHeaders: (res, filePath) => {
-    // Set proper cache headers for static assets
-    if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
-      res.setHeader('Cache-Control', 'public, max-age=31536000');
-      res.setHeader('Content-Type', filePath.endsWith('.js') ? 'application/javascript' : 'text/css');
+    logger.info(`Serving static file: ${filePath}`);
+    try {
+      // Set proper cache headers for static assets
+      if (filePath.endsWith('.js')) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000');
+        res.setHeader('Content-Type', 'application/javascript');
+      } else if (filePath.endsWith('.css')) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000');
+        res.setHeader('Content-Type', 'text/css');
+      } else if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Content-Type', 'text/html');
+      }
+      logger.info(`Headers set for ${filePath}:`, {
+        'Content-Type': res.getHeader('Content-Type'),
+        'Cache-Control': res.getHeader('Cache-Control')
+      });
+    } catch (error) {
+      logger.error(`Error setting headers for ${filePath}:`, error);
     }
   }
 }));
 
 // Middleware para manejar errores de archivos estáticos
 app.use((err, req, res, next) => {
+  logger.error('Static file error:', {
+    path: req.path,
+    error: err.message,
+    stack: err.stack
+  });
+  
   if (err.status === 404) {
     // Si el archivo no se encuentra, servir el index.html
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
@@ -413,12 +434,17 @@ app.use((err, req, res, next) => {
 
 // Todas las demás rutas sirven el index.html para el enrutamiento del lado del cliente
 app.get('*', (req, res) => {
+  logger.info(`Serving index.html for route: ${req.path}`);
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  logger.error('Error:', err.stack);
+  logger.error('Error:', {
+    path: req.path,
+    error: err.message,
+    stack: err.stack
+  });
   res.status(500).json({
     error: 'Error interno del servidor',
     details: process.env.NODE_ENV === 'development' ? err.message : undefined

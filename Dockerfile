@@ -31,7 +31,8 @@ COPY --from=build /app/server.js ./server.js
 # Create logs directory and set permissions
 RUN mkdir -p logs && \
     chown -R node:node /app && \
-    chmod -R 755 /app/dist
+    chmod -R 755 /app/dist && \
+    ls -la /app/dist
 
 # Switch to non-root user
 USER node
