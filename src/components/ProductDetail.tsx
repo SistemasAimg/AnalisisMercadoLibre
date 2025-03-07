@@ -1,6 +1,8 @@
 import React from 'react';
 import { Product } from '../services/api';
-import { ArrowLeft, Star, Truck, ShieldCheck, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Star, Truck, ShieldCheck, BarChart3, Line } from 'lucide-react';
+import { useQuery } from 'react-query';
+import { getItemStats, getItemHistory } from '../services/api';
 
 interface ProductDetailProps {
   product: Product | null;
@@ -8,6 +10,18 @@ interface ProductDetailProps {
 }
 
 const ProductDetail: React.FC<ProductDetailProps> = ({ product, onBack }) => {
+  const { data: productStats } = useQuery(
+    ['productStats', product?.id],
+    () => getItemStats(product!.id),
+    { enabled: !!product }
+  );
+
+  const { data: productHistory } = useQuery(
+    ['productHistory', product?.id],
+    () => getItemHistory(product!.id),
+    { enabled: !!product }
+  );
+
   if (!product) return null;
 
   const formatPrice = (price: number, currency: string) => {
@@ -99,14 +113,96 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ product, onBack }) => {
       </div>
 
       <div className="mt-10">
-        <h2 className="text-xl font-bold text-gray-800 mb-4">Análisis de mercado</h2>
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <p className="text-gray-600 mb-4">
-            Este producto tiene un precio {Math.random() > 0.5 ? 'por debajo' : 'por encima'} del promedio 
-            de mercado en su categoría. La tendencia de ventas es {Math.random() > 0.5 ? 'creciente' : 'estable'}.
-          </p>
-          <div className="h-64 bg-white p-4 rounded-lg border border-gray-200">
-            <p className="text-center text-gray-500">Aquí se mostraría un gráfico de tendencia de precios</p>
+        <h2 className="text-xl font-bold text-gray-800 mb-4">Análisis del Producto</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h3 className="text-lg font-medium text-gray-800 mb-4">Historial de Precios y Ventas</h3>
+            {productHistory && (
+              <Line
+                data={{
+                  labels: productHistory.map(h => formatDate(h.date)),
+                  datasets: [
+                    {
+                      label: 'Precio',
+                      data: productHistory.map(h => h.price),
+                      borderColor: 'rgb(59, 130, 246)',
+                      yAxisID: 'y1',
+                    },
+                    {
+                      label: 'Unidades Vendidas',
+                      data: productHistory.map(h => h.soldQuantity),
+                      borderColor: 'rgb(34, 197, 94)',
+                      yAxisID: 'y2',
+                    }
+                  ]
+                }}
+                options={{
+                  responsive: true,
+                  interaction: {
+                    mode: 'index',
+                    intersect: false,
+                  },
+                  scales: {
+                    y1: {
+                      type: 'linear',
+                      display: true,
+                      position: 'left',
+                    },
+                    y2: {
+                      type: 'linear',
+                      display: true,
+                      position: 'right',
+                      grid: {
+                        drawOnChartArea: false,
+                      },
+                    },
+                  }
+                }}
+              />
+            )}
+          </div>
+
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h3 className="text-lg font-medium text-gray-800 mb-4">Métricas de Rendimiento</h3>
+            {productStats && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white p-4 rounded-lg">
+                    <p className="text-sm text-gray-600">Visitas (30 días)</p>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {productStats.views.toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg">
+                    <p className="text-sm text-gray-600">Ventas Totales</p>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {productStats.sales.toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-white p-4 rounded-lg">
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">Visitas Diarias</h4>
+                  <Bar
+                    data={{
+                      labels: productStats.visits.map(v => formatDate(v.date)),
+                      datasets: [{
+                        label: 'Visitas',
+                        data: productStats.visits.map(v => v.total),
+                        backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                      }]
+                    }}
+                    options={{
+                      responsive: true,
+                      plugins: {
+                        legend: {
+                          display: false,
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -203,38 +203,146 @@ export const getProductDetails = async (productId: string): Promise<Product> => 
   }
 };
 
-// Función para obtener análisis de mercado con foco en tiendas oficiales
+// Interfaces adicionales para los nuevos datos
+interface ItemVisits {
+  date: string;
+  total: number;
+}
+
+interface ItemStats {
+  visits: ItemVisits[];
+  sales: number;
+  views: number;
+  lastUpdated: string;
+}
+
+interface SellerReputation {
+  level_id: string;
+  power_seller_status: string | null;
+  transactions: {
+    canceled: number;
+    completed: number;
+    period: string;
+    ratings: {
+      negative: number;
+      neutral: number;
+      positive: number;
+    };
+    total: number;
+  };
+}
+
+interface ItemHistory {
+  price: number;
+  date: string;
+  soldQuantity: number;
+  availableQuantity: number;
+}
+
+// Función para obtener estadísticas detalladas de un item
+async function getItemStats(itemId: string): Promise<ItemStats> {
+  try {
+    const [visitsResponse, statsResponse] = await Promise.all([
+      proxyApi.get(`/items/${itemId}/visits/time_window?last=30&unit=day`),
+      proxyApi.get(`/items/${itemId}/stats`)
+    ]);
+
+    return {
+      visits: visitsResponse.data,
+      sales: statsResponse.data.sold_quantity,
+      views: statsResponse.data.visits,
+      lastUpdated: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error(`Error al obtener estadísticas del item ${itemId}:`, error);
+    throw error;
+  }
+}
+
+// Función para obtener el historial de un item
+async function getItemHistory(itemId: string): Promise<ItemHistory[]> {
+  try {
+    const response = await proxyApi.get(`/items/${itemId}/history`);
+    return response.data.map((record: any) => ({
+      price: record.price,
+      date: record.date,
+      soldQuantity: record.sold_quantity,
+      availableQuantity: record.available_quantity
+    }));
+  } catch (error) {
+    console.error(`Error al obtener historial del item ${itemId}:`, error);
+    throw error;
+  }
+}
+
+// Función para obtener detalles del vendedor
+async function getSellerDetails(sellerId: number): Promise<SellerReputation> {
+  try {
+    const response = await proxyApi.get(`/users/${sellerId}`);
+    return response.data.seller_reputation;
+  } catch (error) {
+    console.error(`Error al obtener detalles del vendedor ${sellerId}:`, error);
+    throw error;
+  }
+}
+
+// Función mejorada para obtener análisis de mercado
 export const getMarketAnalysis = async (
-  query: string, 
+  query: string,
   officialStoresOnly = false
 ): Promise<MarketAnalysis> => {
   try {
-    // Obtener productos con un límite menor para evitar errores de rate limit
-    const searchData = await searchProducts(query, 50, 0, officialStoresOnly);
+    // Obtener productos con un límite mayor para mejor análisis
+    const searchData = await searchProducts(query, 100, 0, officialStoresOnly);
     
     if (!searchData.results.length) {
       throw new Error('No hay suficientes datos para realizar un análisis');
     }
 
-    // Calcular estadísticas de precios
+    // Obtener datos detallados de los primeros 20 productos (para evitar rate limiting)
+    const topProducts = searchData.results.slice(0, 20);
+    
+    // Obtener estadísticas e historiales en paralelo
+    const productDetailsPromises = topProducts.map(async (product) => {
+      const [stats, history, sellerDetails] = await Promise.all([
+        getItemStats(product.id),
+        getItemHistory(product.id),
+        getSellerDetails(product.seller.id)
+      ]);
+      
+      return {
+        product,
+        stats,
+        history,
+        sellerDetails
+      };
+    });
+
+    const productDetails = await Promise.all(productDetailsPromises);
+
+    // Calcular estadísticas de precios actuales
     const prices = searchData.results.map(item => item.price);
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
     const averagePrice = prices.reduce((sum, price) => sum + price, 0) / prices.length;
 
-    // Analizar tiendas oficiales
+    // Analizar tiendas oficiales con datos reales
     const officialStoresMap = new Map();
     let totalOfficialStoreProducts = 0;
 
-    searchData.results.forEach(product => {
+    for (const product of searchData.results) {
       if (product.official_store_id) {
         totalOfficialStoreProducts++;
         if (!officialStoresMap.has(product.official_store_id)) {
+          // Obtener detalles de la tienda oficial
+          const storeResponse = await proxyApi.get(`/stores/${product.official_store_id}`);
+          
           officialStoresMap.set(product.official_store_id, {
             id: product.official_store_id,
-            name: product.official_store_name || `Tienda Oficial ${product.official_store_id}`,
+            name: storeResponse.data.name,
             products: [product],
-            totalPrice: product.price
+            totalPrice: product.price,
+            metrics: storeResponse.data.metrics
           });
         } else {
           const store = officialStoresMap.get(product.official_store_id);
@@ -242,143 +350,205 @@ export const getMarketAnalysis = async (
           store.totalPrice += product.price;
         }
       }
-    });
-
-    const officialStores = {
-      total: officialStoresMap.size,
-      stores: Array.from(officialStoresMap.values()).map(store => ({
-        id: store.id,
-        name: store.name,
-        productsCount: store.products.length,
-        averagePrice: store.totalPrice / store.products.length
-      })),
-      percentage: (officialStoresMap.size / searchData.results.length) * 100
-    };
-
-    // Obtener vendedores únicos y sus detalles
-    const uniqueSellers = new Map();
-    for (const item of searchData.results) {
-      if (!uniqueSellers.has(item.seller.id)) {
-        uniqueSellers.set(item.seller.id, {
-          id: item.seller.id,
-          nickname: item.seller.nickname,
-          salesCount: item.sold_quantity,
-          items: [item],
-          isOfficialStore: !!item.official_store_id
-        });
-      } else {
-        const seller = uniqueSellers.get(item.seller.id);
-        seller.salesCount += item.sold_quantity;
-        seller.items.push(item);
-      }
     }
 
-    // Obtener top vendedores
-    const topSellers = Array.from(uniqueSellers.values())
-      .sort((a, b) => b.salesCount - a.salesCount)
-      .slice(0, 5)
-      .map(seller => ({
-        id: seller.id,
-        nickname: seller.nickname,
-        salesCount: seller.salesCount,
-        reputation: seller.items[0].seller.power_seller_status || 'N/A',
-        isOfficialStore: seller.isOfficialStore
-      }));
+    // Calcular tendencias reales basadas en historiales
+    const allHistories = productDetails.flatMap(detail => detail.history);
+    const sortedHistories = allHistories.sort((a, b) => 
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
 
-    // Generar historial de precios simulado
-    const priceHistory: PriceHistory[] = [];
-    const today = new Date();
-    for (let i = 5; i >= 0; i--) {
-      const date = new Date(today);
-      date.setMonth(date.getMonth() - i);
-      const variation = (Math.random() * 0.2) - 0.1;
-      priceHistory.push({
-        date: date.toISOString().split('T')[0],
-        price: averagePrice * (1 + variation)
-      });
-    }
+    // Calcular tendencia de ventas real
+    const salesTrend = calculateSalesTrend(sortedHistories);
 
-    // Calcular tendencia de ventas
-    const salesTrend = Math.random() * 30 - 5;
+    // Calcular nivel de competencia basado en datos reales
+    const competitionLevel = calculateCompetitionLevel(
+      searchData.results,
+      productDetails.map(detail => detail.sellerDetails)
+    );
 
-    // Determinar nivel de competencia
-    let competitionLevel: 'low' | 'medium' | 'high' = 'low';
-    if (uniqueSellers.size > 50) competitionLevel = 'high';
-    else if (uniqueSellers.size > 20) competitionLevel = 'medium';
+    // Generar distribución de precios real
+    const priceDistribution = calculatePriceDistribution(prices);
 
-    // Generar distribución de precios
-    const priceRanges = [
-      { min: minPrice, max: minPrice + (maxPrice - minPrice) * 0.33 },
-      { min: minPrice + (maxPrice - minPrice) * 0.33, max: minPrice + (maxPrice - minPrice) * 0.66 },
-      { min: minPrice + (maxPrice - minPrice) * 0.66, max: maxPrice }
-    ];
-
-    const priceDistribution = priceRanges.map(range => {
-      const count = prices.filter(p => p >= range.min && p <= range.max).length;
-      return {
-        range: `${range.min.toFixed(0)} - ${range.max.toFixed(0)}`,
-        count,
-        percentage: (count / prices.length) * 100
-      };
-    });
-
-    // Analizar condiciones de productos
-    const conditions = new Map();
-    searchData.results.forEach(product => {
-      const count = conditions.get(product.condition) || 0;
-      conditions.set(product.condition, count + 1);
-    });
-
-    const conditionBreakdown = Array.from(conditions.entries()).map(([condition, count]) => ({
-      condition,
-      count,
-      percentage: (count as number / searchData.results.length) * 100
-    }));
-
-    // Generar recomendaciones
-    const recommendations = [];
-    
-    if (officialStores.total > 0) {
-      recommendations.push(
-        `Hay ${officialStores.total} tiendas oficiales en este mercado. ` +
-        `Representan el ${officialStores.percentage.toFixed(1)}% de los vendedores.`
-      );
-
-      if (officialStores.percentage > 50) {
-        recommendations.push('Alta presencia de tiendas oficiales. Considera establecer alianzas estratégicas.');
-      } else if (officialStores.percentage < 20) {
-        recommendations.push('Baja presencia de tiendas oficiales. Oportunidad para establecer presencia oficial.');
-      }
-    }
-
-    if (salesTrend > 10) {
-      recommendations.push('El mercado está en crecimiento, es un buen momento para invertir en inventario.');
-    } else if (salesTrend < 0) {
-      recommendations.push('Las ventas están disminuyendo, considera reducir precios o diversificar.');
-    }
-
-    if (competitionLevel === 'high') {
-      recommendations.push('Alta competencia detectada, enfócate en diferenciación y servicio al cliente.');
-    } else if (competitionLevel === 'low') {
-      recommendations.push('Baja competencia, oportunidad para establecer presencia dominante en el mercado.');
-    }
+    // Generar recomendaciones basadas en datos reales
+    const recommendations = generateRecommendations(
+      searchData.results,
+      productDetails,
+      salesTrend,
+      competitionLevel
+    );
 
     return {
       averagePrice,
       priceRange: { min: minPrice, max: maxPrice },
-      totalSellers: uniqueSellers.size,
-      officialStores,
+      totalSellers: new Set(searchData.results.map(item => item.seller.id)).size,
+      officialStores: {
+        total: officialStoresMap.size,
+        stores: Array.from(officialStoresMap.values()).map(store => ({
+          id: store.id,
+          name: store.name,
+          productsCount: store.products.length,
+          averagePrice: store.totalPrice / store.products.length,
+          metrics: store.metrics
+        })),
+        percentage: (officialStoresMap.size / searchData.results.length) * 100
+      },
       totalListings: searchData.paging.total,
-      priceHistory,
+      priceHistory: sortedHistories,
       salesTrend,
       competitionLevel,
       recommendations,
-      topSellers,
+      topSellers: generateTopSellers(productDetails),
       priceDistribution,
-      conditionBreakdown
+      marketMetrics: {
+        totalViews: productDetails.reduce((sum, detail) => sum + detail.stats.views, 0),
+        averageViews: productDetails.reduce((sum, detail) => sum + detail.stats.views, 0) / productDetails.length,
+        totalSales: productDetails.reduce((sum, detail) => sum + detail.stats.sales, 0),
+        conversionRate: calculateConversionRate(productDetails)
+      }
     };
   } catch (error) {
     console.error('Error al realizar análisis de mercado:', error);
     throw error;
   }
 };
+
+// Funciones auxiliares para cálculos
+
+function calculateSalesTrend(histories: ItemHistory[]): number {
+  const monthlyData = groupHistoriesByMonth(histories);
+  const months = Object.keys(monthlyData).sort();
+  
+  if (months.length < 2) return 0;
+  
+  const lastMonth = monthlyData[months[months.length - 1]];
+  const previousMonth = monthlyData[months[months.length - 2]];
+  
+  return ((lastMonth.sales - previousMonth.sales) / previousMonth.sales) * 100;
+}
+
+function calculateCompetitionLevel(
+  products: Product[],
+  sellerReputations: SellerReputation[]
+): 'low' | 'medium' | 'high' {
+  const totalSellers = new Set(products.map(p => p.seller.id)).size;
+  const powerSellers = sellerReputations.filter(r => 
+    r.power_seller_status === 'platinum' || r.power_seller_status === 'gold'
+  ).length;
+  
+  const powerSellerRatio = powerSellers / totalSellers;
+  
+  if (powerSellerRatio > 0.5) return 'high';
+  if (powerSellerRatio > 0.2) return 'medium';
+  return 'low';
+}
+
+function calculatePriceDistribution(prices: number[]): {
+  range: string;
+  count: number;
+  percentage: number;
+}[] {
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min;
+  const segments = 5;
+  const segmentSize = range / segments;
+  
+  const distribution = Array(segments).fill(0).map((_, i) => ({
+    range: `${(min + (i * segmentSize)).toFixed(0)} - ${(min + ((i + 1) * segmentSize)).toFixed(0)}`,
+    count: 0,
+    percentage: 0
+  }));
+  
+  prices.forEach(price => {
+    const index = Math.min(
+      Math.floor((price - min) / segmentSize),
+      segments - 1
+    );
+    distribution[index].count++;
+  });
+  
+  distribution.forEach(d => {
+    d.percentage = (d.count / prices.length) * 100;
+  });
+  
+  return distribution;
+}
+
+function calculateConversionRate(productDetails: any[]): number {
+  const totalViews = productDetails.reduce((sum, detail) => sum + detail.stats.views, 0);
+  const totalSales = productDetails.reduce((sum, detail) => sum + detail.stats.sales, 0);
+  
+  return totalViews > 0 ? (totalSales / totalViews) * 100 : 0;
+}
+
+function generateTopSellers(productDetails: any[]): any[] {
+  const sellerStats = new Map();
+  
+  productDetails.forEach(detail => {
+    const { seller } = detail.product;
+    const stats = sellerStats.get(seller.id) || {
+      id: seller.id,
+      nickname: seller.nickname,
+      salesCount: 0,
+      reputation: detail.sellerDetails,
+      isOfficialStore: !!detail.product.official_store_id
+    };
+    
+    stats.salesCount += detail.stats.sales;
+    sellerStats.set(seller.id, stats);
+  });
+  
+  return Array.from(sellerStats.values())
+    .sort((a, b) => b.salesCount - a.salesCount)
+    .slice(0, 5);
+}
+
+function generateRecommendations(
+  products: Product[],
+  productDetails: any[],
+  salesTrend: number,
+  competitionLevel: string
+): string[] {
+  const recommendations: string[] = [];
+  
+  // Análisis de precios
+  const avgPrice = products.reduce((sum, p) => sum + p.price, 0) / products.length;
+  const profitableProducts = productDetails.filter(d => 
+    d.stats.sales > 0 && d.product.price > avgPrice
+  );
+  
+  if (profitableProducts.length > 0) {
+    recommendations.push(
+      `${profitableProducts.length} productos con precio superior al promedio muestran ventas activas.`
+    );
+  }
+
+  // Análisis de conversión
+  const conversionRate = calculateConversionRate(productDetails);
+  if (conversionRate < 2) {
+    recommendations.push(
+      'La tasa de conversión es baja. Considera mejorar las descripciones y fotos de los productos.'
+    );
+  }
+
+  // Análisis de competencia
+  if (competitionLevel === 'high') {
+    recommendations.push(
+      'Alta presencia de vendedores establecidos. Enfócate en diferenciación y servicio al cliente.'
+    );
+  }
+
+  // Análisis de tendencia
+  if (salesTrend > 10) {
+    recommendations.push(
+      'El mercado muestra un crecimiento significativo. Considera aumentar el inventario.'
+    );
+  } else if (salesTrend < -10) {
+    recommendations.push(
+      'Las ventas están disminuyendo. Evalúa ajustar precios o diversificar el catálogo.'
+    );
+  }
+
+  return recommendations;
+}

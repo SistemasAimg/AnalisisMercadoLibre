@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { BarChart3, DollarSign, TrendingUp, Users, AlertCircle, Store, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { BarChart3, DollarSign, TrendingUp, Users, AlertCircle, Store, ChevronDown, ChevronUp, ExternalLink, LineChart, BarChart } from 'lucide-react';
 import { useQuery } from 'react-query';
 import { getMarketAnalysis, searchProducts, Product } from '../services/api';
 import { isAuthenticated } from '../services/auth';
@@ -115,6 +115,11 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
   const formatPercent = (value: number) => {
     const sign = value >= 0 ? '+' : '';
     return `${sign}${value.toFixed(1)}%`;
+  };
+
+  const formatDate = (date: string) => {
+    const d = new Date(date);
+    return d.toLocaleDateString();
   };
 
   if (!searchQuery) {
@@ -249,20 +254,24 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             {formatPercent(analysis.salesTrend)} vs. mes anterior
           </p>
         </div>
+
         <div className="bg-gray-50 p-4 rounded-lg">
           <div className="flex items-center mb-2">
-            <Store size={24} className="text-green-500" />
-            <h3 className="ml-2 text-gray-700 font-medium">Tiendas Oficiales</h3>
+            <LineChart size={24} className="text-green-500" />
+            <h3 className="ml-2 text-gray-700 font-medium">Conversión</h3>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{analysis.officialStores.total}</p>
+          <p className="text-2xl font-bold text-gray-900">
+            {analysis.marketMetrics.conversionRate.toFixed(2)}%
+          </p>
           <p className="text-sm text-gray-600">
-            {analysis.officialStores.percentage.toFixed(1)}% del mercado
+            {analysis.marketMetrics.totalSales} ventas de {analysis.marketMetrics.totalViews} vistas
           </p>
         </div>
+
         <div className="bg-gray-50 p-4 rounded-lg">
           <div className="flex items-center mb-2">
             <Users size={24} className="text-purple-500" />
-            <h3 className="ml-2 text-gray-700 font-medium">Total Vendedores</h3>
+            <h3 className="ml-2 text-gray-700 font-medium">Vendedores</h3>
           </div>
           <p className="text-2xl font-bold text-gray-900">{analysis.totalSellers}</p>
           <p className="text-sm text-gray-600">
@@ -272,16 +281,97 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
         </div>
       </div>
 
+      <div className="bg-gray-50 p-4 rounded-lg mb-6">
+        <h3 className="text-lg font-medium text-gray-800 mb-4">Tendencias históricas</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Precios y Ventas</h4>
+            <Line 
+              data={{
+                labels: analysis.priceHistory.map(h => formatDate(h.date)),
+                datasets: [
+                  {
+                    label: 'Precio promedio',
+                    data: analysis.priceHistory.map(h => h.price),
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    yAxisID: 'y1',
+                  },
+                  {
+                    label: 'Unidades vendidas',
+                    data: analysis.priceHistory.map(h => h.soldQuantity),
+                    borderColor: 'rgb(34, 197, 94)',
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    yAxisID: 'y2',
+                  }
+                ]
+              }}
+              options={{
+                responsive: true,
+                interaction: {
+                  mode: 'index',
+                  intersect: false,
+                },
+                scales: {
+                  y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: {
+                      display: true,
+                      text: 'Precio ($)'
+                    }
+                  },
+                  y2: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    title: {
+                      display: true,
+                      text: 'Unidades'
+                    },
+                    grid: {
+                      drawOnChartArea: false,
+                    },
+                  },
+                }
+              }}
+            />
+          </div>
+          <div>
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Visitas diarias</h4>
+            <Bar 
+              data={{
+                labels: analysis.marketMetrics.visits.map(v => formatDate(v.date)),
+                datasets: [{
+                  label: 'Visitas',
+                  data: analysis.marketMetrics.visits.map(v => v.total),
+                  backgroundColor: 'rgba(99, 102, 241, 0.5)',
+                }]
+              }}
+              options={{
+                responsive: true,
+                plugins: {
+                  legend: {
+                    position: 'top' as const,
+                  },
+                  title: {
+                    display: false,
+                  }
+                }
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
       {analysis.officialStores.total > 0 && (
         <div className="bg-gray-50 p-4 rounded-lg mb-6">
           <h3 className="text-lg font-medium text-gray-800 mb-4">Tiendas Oficiales</h3>
           <div className="space-y-4">
             {analysis.officialStores.stores.map(store => (
               <div key={store.id} className="bg-white p-4 rounded-lg shadow-sm">
-                <button 
-                  onClick={() => toggleStoreProducts(store.id)}
-                  className="w-full flex items-center justify-between"
-                >
+                <div className="flex justify-between items-start">
                   <div>
                     <h4 className="font-medium text-gray-800">{store.name}</h4>
                     <div className="text-sm text-gray-600 mt-1">
@@ -290,11 +380,25 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
                       <span>Precio promedio: {formatPrice(store.averagePrice)}</span>
                     </div>
                   </div>
-                  {storeProducts[store.id]?.isExpanded ? (
-                    <ChevronUp size={20} className="text-gray-500" />
-                  ) : (
-                    <ChevronDown size={20} className="text-gray-500" />
-                  )}
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-gray-700">Métricas de la tienda</p>
+                    <div className="text-sm text-gray-600">
+                      <p>Ventas últimos 60 días: {store.metrics.sales}</p>
+                      <p>Calificación: {store.metrics.rating.toFixed(1)}/5</p>
+                    </div>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => toggleStoreProducts(store.id)}
+                  className="w-full flex items-center justify-between mt-4"
+                >
+                  <div>
+                    {storeProducts[store.id]?.isExpanded ? (
+                      <ChevronUp size={20} className="text-gray-500" />
+                    ) : (
+                      <ChevronDown size={20} className="text-gray-500" />
+                    )}
+                  </div>
                 </button>
 
                 {storeProducts[store.id]?.isExpanded && (
@@ -350,13 +454,6 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
         </div>
       )}
 
-      <div className="mb-8">
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <h3 className="text-lg font-medium text-gray-800 mb-4">Tendencia de precios</h3>
-          <Line options={options} data={priceData} />
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div className="bg-gray-50 p-4 rounded-lg">
           <h3 className="text-lg font-medium text-gray-800 mb-4">Distribución de precios</h3>
@@ -364,7 +461,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             {analysis.priceDistribution.map((range, index) => (
               <div key={index} className="space-y-1">
                 <div className="flex justify-between text-sm text-gray-600">
-                  <span>{range.range}</span>
+                  <span>{formatPrice(Number(range.range.split(' - ')[0]))} - {formatPrice(Number(range.range.split(' - ')[1]))}</span>
                   <span>{range.count} productos</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
@@ -382,16 +479,25 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
           <h3 className="text-lg font-medium text-gray-800 mb-4">Top Vendedores</h3>
           <div className="space-y-3">
             {analysis.topSellers.map((seller) => (
-              <div key={seller.id} className="flex items-center justify-between bg-white p-3 rounded-lg shadow-sm">
-                <div>
-                  <p className="font-medium text-gray-800">{seller.nickname}</p>
-                  <p className="text-sm text-gray-600">Ventas: {seller.salesCount}</p>
+              <div key={seller.id} className="bg-white p-4 rounded-lg shadow-sm">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-medium text-gray-800">{seller.nickname}</p>
+                    <p className="text-sm text-gray-600">
+                      Ventas: {seller.salesCount} | Reputación: {seller.reputation.level_id}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-gray-600">
+                      Transacciones completadas: {seller.reputation.transactions.completed}
+                    </p>
+                    <div className="flex items-center justify-end mt-1">
+                      <span className="text-green-600 text-xs">
+                        {seller.reputation.transactions.ratings.positive}% positivas
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                {seller.isOfficialStore && (
-                  <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                    Tienda Oficial
-                  </span>
-                )}
               </div>
             ))}
           </div>
