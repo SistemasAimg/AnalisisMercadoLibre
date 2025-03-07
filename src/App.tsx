@@ -1,205 +1,180 @@
+/*******************************************************
+ * APP.TSX - Versión completa adaptada
+ * Flujo: Categoría → Producto → Rango de Fechas → Análisis
+ *******************************************************/
+
 import React, { useState } from 'react';
-import { useQuery } from 'react-query';
-import { BarChart3, Search, TrendingUp, Bell } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { BarChart3, Bell } from 'lucide-react';
+
+// Importa tus componentes (ajusta las rutas según tu estructura real)
 import SearchBar from './components/SearchBar';
-import ProductCard from './components/ProductCard';
-import ProductDetail from './components/ProductDetail';
-import CategoryList from './components/CategoryList';
-import MarketInsights from './components/MarketInsights';
 import AuthButton from './components/AuthButton';
-import { 
-  searchProducts, 
-  getCategories, 
-  searchProducts as getProductsByCategory,
-  Product, 
-  Category 
-} from './services/api';
+import CategoryList from './components/CategoryList';
+import ProductSelector from './components/ProductSelector';
+import DateRangePicker from './components/DateRangePicker';
+import MarketInsights from './components/MarketInsights';
 
+// (Opcional) Si tu CategoryList y ProductSelector 
+// hacen peticiones, podrías importar react-query, etc.
+// import { useQuery } from 'react-query';
+// import { getCategories } from './services/api'; 
+// ...
+
+/**
+ * Definición de App
+ */
 function App() {
-  const [searchQuery, setSearchQuery] = useState('');
+  /*******************************************************
+   * ESTADOS PRINCIPALES
+   *******************************************************/
+  // (1) Categoría elegida
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [activeTab, setActiveTab] = useState<'products' | 'insights'>('products');
 
-  // Fetch categories
-  const { 
-    data: categories = [], 
-    isLoading: categoriesLoading,
-    error: categoriesError
-  } = useQuery<Category[]>('categories', getCategories, {
-    onError: (error) => {
-      console.error('Error al cargar categorías:', error);
-    }
+  // (2) Producto elegido (ID del producto)
+  //    Podrías usar un objeto completo si tu ProductSelector retorna
+  //    el objeto entero, pero aquí asumes que retorna un string ID.
+  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
+
+  // (3) Rango de fechas: start y end en formato string (YYYY-MM-DD)
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({
+    start: '',
+    end: ''
   });
 
-  // Fetch products based on search query or category
-  const { 
-    data: searchResults, 
-    isLoading: productsLoading,
-    refetch: refetchProducts
-  } = useQuery(
-    ['products', searchQuery, selectedCategory],
-    () => {
-      if (selectedCategory) {
-        return getProductsByCategory(searchQuery, 50, 0, false);
-      }
-      if (searchQuery) {
-        return searchProducts(searchQuery);
-      }
-      return { results: [], paging: { total: 0, offset: 0, limit: 20 } };
-    },
-    {
-      enabled: !!searchQuery || !!selectedCategory,
-    }
-  );
+  /*******************************************************
+   * MANEJADORES DE EVENTOS
+   *******************************************************/
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-    setSelectedCategory(null);
-    setSelectedProduct(null);
-    setActiveTab('products');
-  };
-
-  const handleSelectCategory = (categoryId: string) => {
+  /**
+   * Cuando el usuario selecciona una categoría en CategoryList
+   */
+  const handleCategorySelect = (categoryId: string) => {
+    // Guardar categoría elegida
     setSelectedCategory(categoryId);
-    setSearchQuery('');
+    // Resetear producto y rango de fechas cuando se cambia de categoría
     setSelectedProduct(null);
-    setActiveTab('products');
-    refetchProducts();
+    setDateRange({ start: '', end: '' });
   };
 
-  const handleProductClick = (product: Product) => {
-    setSelectedProduct(product);
+  /**
+   * Cuando el usuario selecciona un producto en ProductSelector
+   */
+  const handleProductSelect = (productId: string) => {
+    // Guardar ID del producto elegido
+    setSelectedProduct(productId);
+    // Resetear rango de fechas al cambiar de producto
+    setDateRange({ start: '', end: '' });
   };
 
-  const handleBackToResults = () => {
-    setSelectedProduct(null);
+  /**
+   * Cuando el usuario cambia el rango de fechas en DateRangePicker
+   */
+  const handleDateRangeChange = (range: { start: string; end: string }) => {
+    setDateRange(range);
   };
 
-  // Asegurarse de que categories sea un array
-  const categoriesArray = Array.isArray(categories) ? categories : [];
-
-  // Asegurarse de que searchResults.results sea un array
-  const searchResultsArray = searchResults?.results || [];
-  const searchResultsPaging = searchResults?.paging || { total: 0, offset: 0, limit: 20 };
-
+  /*******************************************************
+   * RENDER PRINCIPAL
+   *******************************************************/
   return (
     <div className="min-h-screen bg-gray-100">
+      {/*****************************************************************
+       * HEADER
+       *****************************************************************/}
       <header className="bg-blue-600 text-white">
         <div className="container mx-auto px-4 py-6">
-          <div className="flex flex-col md:flex-row items-center justify-between mb-6">
+          {/* Encabezado principal */}
+          <div className="flex flex-col md:flex-row items-center justify-between">
+            {/* Logo + título */}
             <div className="flex items-center mb-4 md:mb-0">
               <BarChart3 size={32} className="mr-2" />
               <h1 className="text-2xl font-bold">MercadoAnalytics</h1>
             </div>
+
+            {/* Barra de búsqueda, link webhooks, y botón auth */}
             <div className="flex items-center space-x-4">
-              <SearchBar onSearch={handleSearch} />
-              <Link 
-                to="/webhooks" 
+              {/* Si tu SearchBar se mantiene, puedes usarlo aquí.
+                  O podrías quitarlo si ya no lo necesitas. */}
+              <SearchBar onSearch={(q) => {
+                console.log('Buscar en barra:', q);
+                // En caso de usarlo, manipula la lógica que necesites.
+              }} />
+
+              {/* Link a la ruta de Webhooks */}
+              <Link
+                to="/webhooks"
                 className="flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-400 transition-colors"
               >
                 <Bell size={18} className="mr-2" />
                 <span>Webhooks</span>
               </Link>
+
+              {/* Botón de autenticación */}
               <AuthButton />
             </div>
           </div>
         </div>
       </header>
 
+      {/*****************************************************************
+       * MAIN
+       *****************************************************************/}
       <main className="container mx-auto px-4 py-8">
-        {!selectedProduct ? (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <div className="md:col-span-1 space-y-6">
-              {!categoriesLoading && categoriesArray.length > 0 && (
-                <CategoryList 
-                  categories={categoriesArray} 
-                  onSelectCategory={handleSelectCategory}
-                  selectedCategory={selectedCategory}
-                />
-              )}
-            </div>
-            
-            <div className="md:col-span-3">
-              <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-                <div className="flex border-b">
-                  <button
-                    className={`px-4 py-2 font-medium ${
-                      activeTab === 'products'
-                        ? 'text-blue-600 border-b-2 border-blue-600'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                    onClick={() => setActiveTab('products')}
-                  >
-                    <div className="flex items-center">
-                      <Search size={18} className="mr-2" />
-                      Productos
-                    </div>
-                  </button>
-                  <button
-                    className={`px-4 py-2 font-medium ${
-                      activeTab === 'insights'
-                        ? 'text-blue-600 border-b-2 border-blue-600'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                    onClick={() => setActiveTab('insights')}
-                  >
-                    <div className="flex items-center">
-                      <TrendingUp size={18} className="mr-2" />
-                      Análisis de Mercado
-                    </div>
-                  </button>
-                </div>
-              </div>
+        {/* (1) Lista de categorías. Se muestra siempre. */}
+        <div className="bg-white rounded-lg shadow-md p-4 mb-8">
+          <h2 className="text-xl font-semibold mb-4">Selecciona una Categoría</h2>
+          <CategoryList
+            onSelectCategory={handleCategorySelect}
+            selectedCategory={selectedCategory}
+          />
+        </div>
 
-              {activeTab === 'products' ? (
-                <>
-                  {productsLoading ? (
-                    <div className="flex justify-center items-center h-64">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                    </div>
-                  ) : searchResultsArray.length > 0 ? (
-                    <div>
-                      <p className="text-gray-600 mb-4">
-                        {searchResultsPaging.total} resultados para {searchQuery || `categoría: ${selectedCategory}`}
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {searchResultsArray.map((product) => (
-                          <ProductCard 
-                            key={product.id} 
-                            product={product} 
-                            onClick={handleProductClick} 
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-white rounded-lg shadow-md p-8 text-center">
-                      <Search size={48} className="mx-auto text-gray-400 mb-4" />
-                      <h2 className="text-xl font-medium text-gray-800 mb-2">
-                        {searchQuery || selectedCategory 
-                          ? 'No se encontraron resultados' 
-                          : 'Busca productos para analizar'}
-                      </h2>
-                      <p className="text-gray-600">
-                        {searchQuery || selectedCategory 
-                          ? 'Intenta con otra búsqueda o categoría' 
-                          : 'Utiliza la barra de búsqueda o selecciona una categoría'}
-                      </p>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <MarketInsights searchQuery={searchQuery} />
-              )}
-            </div>
+        {/* (2) Si ya hay selectedCategory, mostrar ProductSelector */}
+        {selectedCategory && (
+          <div className="bg-white rounded-lg shadow-md p-4 mb-8">
+            <h2 className="text-xl font-semibold mb-4">Selecciona un Producto</h2>
+            {/* asumiendo que tu ProductSelector requiere la categoría
+                para buscar los productos en esa categoría */}
+            <ProductSelector
+              categoryId={selectedCategory}
+              onSelectProduct={handleProductSelect}
+              selectedProductId={selectedProduct}
+            />
           </div>
-        ) : (
-          <ProductDetail product={selectedProduct} onBack={handleBackToResults} />
         )}
+
+        {/* (3) Si ya hay selectedProduct, mostrar DateRangePicker */}
+        {selectedProduct && (
+          <div className="bg-white rounded-lg shadow-md p-4 mb-8">
+            <h2 className="text-xl font-semibold mb-4">Selecciona Rango de Fechas</h2>
+            <DateRangePicker
+              startDate={dateRange.start}
+              endDate={dateRange.end}
+              onChange={handleDateRangeChange}
+            />
+          </div>
+        )}
+
+        {/* (4) Si hay producto y dateRange completo, mostrar MarketInsights */}
+        {selectedProduct && dateRange.start && dateRange.end && (
+          <div className="bg-white rounded-lg shadow-md p-4">
+            <h2 className="text-xl font-semibold mb-4">Análisis de Mercado</h2>
+            <MarketInsights
+              productId={selectedProduct}
+              dateRange={dateRange}
+            />
+          </div>
+        )}
+
+        {/* En caso de querer mostrar el detalle de producto en algún lado
+            si presionan un botón, etc., lo puedes adaptar. 
+            Ahora ya no hay "activeTab" ni "selectedProduct" vs "insights". */}
       </main>
 
+      {/*****************************************************************
+       * FOOTER
+       *****************************************************************/}
       <footer className="bg-gray-800 text-white py-8">
         <div className="container mx-auto px-4">
           <div className="flex flex-col md:flex-row justify-between items-center">
