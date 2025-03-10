@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
 import cors from 'cors';
+import httpProxy from 'http-proxy';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,6 +18,45 @@ app.use(express.json());
 
 // Log para depuración
 console.log(`Iniciando servidor en ${HOST}:${PORT}`);
+
+// Configuración del proxy
+const proxy = httpProxy.createProxyServer({
+  target: 'https://api.mercadolibre.com',
+  changeOrigin: true,
+  secure: true,
+  onProxyReq: (proxyReq, req, res) => {
+    // Mantener los headers originales
+    if (req.headers.authorization) {
+      proxyReq.setHeader('Authorization', req.headers.authorization);
+    }
+  },
+  onError: (err, req, res) => {
+    console.error('Error en proxy:', err);
+    res.status(500).json({ error: 'Error en el proxy', details: err.message });
+  }
+});
+
+// Middleware para manejar CORS
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
+
+// Ruta del proxy
+app.use('/api/proxy', (req, res) => {
+  console.log('Proxy request:', req.method, req.url);
+  proxy.web(req, res, {
+    target: 'https://api.mercadolibre.com',
+    changeOrigin: true,
+    secure: true
+  });
+});
 
 // Endpoint para intercambio de código por token
 app.post('/api/auth/token', async (req, res) => {
@@ -68,27 +108,6 @@ app.post('/api/auth/refresh', async (req, res) => {
       error: 'Error al refrescar token',
       details: error.response?.data || error.message
     });
-  }
-});
-
-// Proxy para la API de MercadoLibre
-app.get('/api/proxy/trends', async (req, res) => {
-  try {
-    console.log('Solicitando tendencias a MercadoLibre');
-    const response = await axios.get('https://api.mercadolibre.com/trends/MLA');
-    console.log('Respuesta recibida de MercadoLibre');
-    res.json(response.data);
-  } catch (error) {
-    console.error('Error al obtener tendencias:', error.message);
-    if (error.response) {
-      console.error('Detalles del error:', error.response.status, error.response.data);
-      res.status(error.response.status).json({
-        error: 'Error al obtener tendencias',
-        details: error.response.data
-      });
-    } else {
-      res.status(500).json({ error: 'Error al obtener tendencias' });
-    }
   }
 });
 

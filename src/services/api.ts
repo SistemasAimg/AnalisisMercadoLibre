@@ -6,7 +6,8 @@ const PROXY_BASE_URL = '/api/proxy';
 
 // Crear una instancia de axios con configuración base
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: window.location.origin, // Usar la URL del servidor actual
+  timeout: 10000, // 10 segundos de timeout
 });
 
 // Interceptor para añadir el token de acceso a las peticiones
@@ -166,10 +167,19 @@ export const searchProducts = async (
       offset: offset.toString()
     });
 
+    console.log('Realizando búsqueda de productos:', query);
     const response = await api.get(`${PROXY_BASE_URL}/search?${params.toString()}`);
+    console.log('Respuesta recibida:', response.data);
     return response.data;
   } catch (error) {
     console.error('Error en búsqueda de productos:', error);
+    if (axios.isAxiosError(error)) {
+      console.error('Detalles del error:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        headers: error.response?.headers
+      });
+    }
     throw error;
   }
 };
