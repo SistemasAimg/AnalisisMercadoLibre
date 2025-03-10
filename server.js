@@ -171,7 +171,7 @@ app.get('/api/proxy/items/:id', async (req, res) => {
   }
 });
 
-// Endpoint para obtener visitas de productosas
+// Endpoint para obtener visitas de productos
 app.get('/api/proxy/items/:id/visits', async (req, res) => {
   try {
     const { id } = req.params;
@@ -201,10 +201,52 @@ app.get('/api/proxy/items/:id/visits', async (req, res) => {
   }
 });
 
-// Endpoint para webhooks de MercadoLibre
+// Endpoints para webhooks de MercadoLibre
+app.post('/api/webhooks', (req, res) => {
+  // Redirigir al endpoint correcto
+  res.redirect(307, '/api/webhooks/mercadolibre');
+});
+
+app.post('/api/webhooks/', (req, res) => {
+  // Redirigir al endpoint correcto
+  res.redirect(307, '/api/webhooks/mercadolibre');
+});
+
 app.post('/api/webhooks/mercadolibre', (req, res) => {
-  console.log('Webhook recibido:', req.body);
-  return res.status(200).json({ status: 'ok' });
+  try {
+    console.log('Webhook recibido:', req.body);
+
+    // Validar la estructura del webhook
+    const { topic, resource, user_id, application_id } = req.body;
+    
+    if (!topic || !resource || !user_id || !application_id) {
+      return res.status(400).json({ 
+        error: 'Formato de webhook inválido',
+        message: 'Se requieren los campos: topic, resource, user_id, application_id' 
+      });
+    }
+
+    // Procesar según el tipo de notificación
+    switch (topic) {
+      case 'items':
+        console.log('Procesando notificación de items:', resource);
+        break;
+      case 'questions':
+        console.log('Procesando notificación de preguntas:', resource);
+        break;
+      default:
+        console.log('Tipo de notificación no manejado:', topic);
+    }
+
+    // Responder con éxito
+    return res.status(200).json({ status: 'ok' });
+  } catch (error) {
+    console.error('Error al procesar webhook:', error);
+    return res.status(500).json({ 
+      error: 'Error interno del servidor',
+      message: error.message 
+    });
+  }
 });
 
 // Servir archivos estáticos
