@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getAccessToken } from './auth';
+import { getAccessToken, refreshAccessToken } from './auth';
 
 const API_BASE_URL = 'https://api.mercadolibre.com';
 const PROXY_BASE_URL = '/api/proxy';
@@ -11,14 +11,49 @@ const api = axios.create({
 
 // Interceptor para añadir el token de acceso a las peticiones
 api.interceptors.request.use(async (config) => {
-  const token = await getAccessToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  try {
+    const token = await getAccessToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+      console.log('Token añadido a la petición:', token.substring(0, 10) + '...');
+    } else {
+      console.warn('No se encontró token de acceso');
+    }
+  } catch (error) {
+    console.error('Error al obtener el token:', error);
   }
   return config;
 }, (error) => {
+  console.error('Error en el interceptor de request:', error);
   return Promise.reject(error);
 });
+
+// Interceptor para manejar errores de autenticación
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401) {
+      console.log('Error de autenticación detectado, intentando refrescar token...');
+      try {
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          // Reintentar la petición original con el nuevo token
+          const config = error.config;
+          config.headers.Authorization = `Bearer ${newToken.access_token}`;
+          return api(config);
+        } else {
+          console.error('No se pudo refrescar el token');
+          // Redirigir al login si no se puede refrescar el token
+          window.location.href = '/auth/login';
+        }
+      } catch (refreshError) {
+        console.error('Error al refrescar el token:', refreshError);
+        window.location.href = '/auth/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 export interface Product {
   id: string;
@@ -131,7 +166,7 @@ export const searchProducts = async (
       offset: offset.toString()
     });
 
-    const response = await axios.get(`${PROXY_BASE_URL}/search?${params.toString()}`);
+    const response = await api.get(`${PROXY_BASE_URL}/search?${params.toString()}`);
     return response.data;
   } catch (error) {
     console.error('Error en búsqueda de productos:', error);
@@ -141,7 +176,7 @@ export const searchProducts = async (
 
 export const getProductDetails = async (productId: string): Promise<Product> => {
   try {
-    const response = await axios.get(`${PROXY_BASE_URL}/items/${productId}`);
+    const response = await api.get(`${PROXY_BASE_URL}/items/${productId}`);
     return response.data;
   } catch (error) {
     console.error('Error al obtener detalles del producto:', error);
@@ -151,7 +186,7 @@ export const getProductDetails = async (productId: string): Promise<Product> => 
 
 export const getCategories = async (): Promise<Category[]> => {
   try {
-    const response = await axios.get(`${PROXY_BASE_URL}/categories`);
+    const response = await api.get(`${PROXY_BASE_URL}/categories`);
     return response.data;
   } catch (error) {
     console.error('Error al obtener categorías:', error);
@@ -161,7 +196,7 @@ export const getCategories = async (): Promise<Category[]> => {
 
 export const getTrends = async (): Promise<Trend[]> => {
   try {
-    const response = await axios.get(`${PROXY_BASE_URL}/trends`);
+    const response = await api.get(`${PROXY_BASE_URL}/trends`);
     return response.data;
   } catch (error) {
     console.error('Error al obtener tendencias:', error);
@@ -176,7 +211,7 @@ export const getSellerInfo = async (sellerId: number): Promise<SellerInfo> => {
 
 export const getItemVisits = async (itemId: string): Promise<VisitData[]> => {
   try {
-    const response = await axios.get(`${PROXY_BASE_URL}/items/${itemId}/visits`, {
+    const response = await api.get(`${PROXY_BASE_URL}/items/${itemId}/visits`, {
       params: {
         last: 30,
         unit: 'day'
