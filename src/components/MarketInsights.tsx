@@ -305,7 +305,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
           </div>
           <p className="text-2xl font-bold text-gray-900">{formatPrice(analysis.averagePrice)}</p>
           <p className={`text-sm ${getTrendClass(analysis.priceTrend)}`}>
-            {formatPercent(analysis.priceTrend)} vs. mes anterior
+            {formatPercent(analysis.priceTrend)} vs. promedio del mercado
           </p>
         </div>
         <div className="bg-gray-50 p-4 rounded-lg">
@@ -331,13 +331,13 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
       </div>
 
       <div className="bg-gray-50 p-4 rounded-lg mb-6">
-        <h3 className="text-lg font-medium text-gray-800 mb-4">Tendencia de precios</h3>
+        <h3 className="text-lg font-medium text-gray-800 mb-4">Historial de visitas</h3>
         <Line 
           data={{
-            labels: analysis.priceHistory.map(item => item.date),
+            labels: analysis.visitHistory.map(item => item.date),
             datasets: [{
-              label: 'Precio promedio',
-              data: analysis.priceHistory.map(item => item.price),
+              label: 'Visitas diarias',
+              data: analysis.visitHistory.map(item => item.total),
               borderColor: 'rgb(59, 130, 246)',
               backgroundColor: 'rgba(59, 130, 246, 0.1)',
               tension: 0.4
@@ -348,11 +348,26 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             plugins: {
               legend: {
                 position: 'top'
+              },
+              tooltip: {
+                callbacks: {
+                  label: (context) => `Visitas: ${context.raw}`
+                }
               }
             },
             scales: {
               y: {
-                beginAtZero: false
+                beginAtZero: true,
+                title: {
+                  display: true,
+                  text: 'Número de visitas'
+                }
+              },
+              x: {
+                title: {
+                  display: true,
+                  text: 'Fecha'
+                }
               }
             }
           }}

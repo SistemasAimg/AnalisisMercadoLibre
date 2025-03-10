@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
+import cors from 'cors';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,7 +11,8 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
 
-// Middleware para parsear JSON
+// Middleware
+app.use(cors());
 app.use(express.json());
 
 // Log para depuración
@@ -109,22 +111,18 @@ app.get('/api/proxy/search', async (req, res) => {
   try {
     const { q, category, limit = 50, offset = 0 } = req.query;
     
-    // Validar parámetros
     if (!q && !category) {
       return res.status(400).json({ 
         error: 'Se requiere un término de búsqueda (q) o una categoría' 
       });
     }
 
-    // Construir URL base
     const baseUrl = 'https://api.mercadolibre.com/sites/MLA/search';
-    
-    // Construir parámetros
     const params = new URLSearchParams();
+    
     if (q) params.append('q', q);
     if (category) params.append('category', category);
     
-    // Asegurarse de que limit y offset sean números válidos
     const limitNum = Math.min(50, Math.max(1, parseInt(limit.toString()) || 50));
     const offsetNum = Math.max(0, parseInt(offset.toString()) || 0);
     
@@ -134,7 +132,6 @@ app.get('/api/proxy/search', async (req, res) => {
     // Realizar la búsqueda sin enviar el token de autorización
     const response = await axios.get(`${baseUrl}?${params.toString()}`);
 
-    // Procesar y enviar respuesta
     res.json({
       results: response.data.results,
       paging: {
