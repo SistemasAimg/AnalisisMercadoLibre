@@ -210,7 +210,7 @@ app.post('/api/webhooks/mercadolibre', (req, res) => {
 // Servir archivos estáticos
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// Todas las demás rutas sirven el index.html para el enrutamiento del lado del cliente
+// Todas las demás rutas sirven el index.html para el enrutamiento del lado del cliente asdasdasd
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
