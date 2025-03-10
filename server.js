@@ -171,7 +171,7 @@ app.get('/api/proxy/items/:id', async (req, res) => {
   }
 });
 
-// Endpoint para obtener visitas de productos
+// Endpoint para obtener visitas de productosdfghj
 app.get('/api/proxy/items/:id/visits', async (req, res) => {
   try {
     const { id } = req.params;
