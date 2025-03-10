@@ -1,16 +1,18 @@
 import axios from 'axios';
 import { getAccessToken } from './auth';
 
-const API_BASE_URL = 'https://api.mercadolibre.com';
-const PROXY_BASE_URL = '/api/proxy';
-
-// Crear una instancia de axios con configuración base
-const api = axios.create({
-  baseURL: API_BASE_URL,
+// Create an axios instance for MercadoLibre API
+const mercadoLibreApi = axios.create({
+  baseURL: 'https://api.mercadolibre.com',
 });
 
-// Interceptor para añadir el token de acceso a las peticiones
-api.interceptors.request.use(async (config) => {
+// Create an axios instance for direct API calls (no proxy)
+const api = axios.create({
+  baseURL: 'https://api.mercadolibre.com',
+});
+
+// Interceptor for MercadoLibre API to handle auth
+mercadoLibreApi.interceptors.request.use(async (config) => {
   const token = await getAccessToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -82,13 +84,13 @@ export const searchProducts = async (
   offset = 0
 ): Promise<SearchResponse> => {
   try {
-    const params = new URLSearchParams({
-      q: query,
-      limit: limit.toString(),
-      offset: offset.toString()
+    const response = await api.get('/sites/MLA/search', {
+      params: {
+        q: query,
+        limit,
+        offset
+      }
     });
-
-    const response = await axios.get(`${PROXY_BASE_URL}/search?${params.toString()}`);
     return response.data;
   } catch (error) {
     console.error('Error en búsqueda de productos:', error);
@@ -98,7 +100,7 @@ export const searchProducts = async (
 
 export const getProductDetails = async (productId: string): Promise<Product> => {
   try {
-    const response = await axios.get(`${PROXY_BASE_URL}/items/${productId}`);
+    const response = await mercadoLibreApi.get(`/items/${productId}`);
     return response.data;
   } catch (error) {
     console.error('Error al obtener detalles del producto:', error);
@@ -108,7 +110,7 @@ export const getProductDetails = async (productId: string): Promise<Product> => 
 
 export const getItemVisits = async (itemId: string): Promise<VisitData[]> => {
   try {
-    const response = await axios.get(`${PROXY_BASE_URL}/items/${itemId}/visits`, {
+    const response = await mercadoLibreApi.get(`/items/${itemId}/visits/time_window`, {
       params: {
         last: 30,
         unit: 'day'
