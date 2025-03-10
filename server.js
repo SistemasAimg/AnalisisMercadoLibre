@@ -3,21 +3,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
 import cors from 'cors';
-import httpProxy from 'http-proxy';
-import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// Verificar variables de entorno requeridas
-const requiredEnvVars = ['ML_CLIENT_ID', 'ML_CLIENT_SECRET', 'ML_REDIRECT_URI'];
-requiredEnvVars.forEach(varName => {
-  if (!process.env[varName]) {
-    console.warn(`⚠️ Variable de entorno ${varName} no está definida`);
-  } else {
-    console.log(`✅ Variable de entorno ${varName} está definida`);
-  }
-});
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -28,78 +16,7 @@ app.use(cors());
 app.use(express.json());
 
 // Log para depuración
-console.log('🚀 Iniciando servidor...');
-console.log('📂 Directorio actual:', __dirname);
-console.log('🌍 Ambiente:', process.env.NODE_ENV);
-console.log('🔌 Puerto:', PORT);
-console.log('🏠 Host:', HOST);
-
-// Verificar existencia del directorio dist
-const distPath = path.join(__dirname, 'dist');
-try {
-  if (fs.existsSync(distPath)) {
-    console.log('✅ Directorio dist encontrado:', distPath);
-    const files = fs.readdirSync(distPath);
-    console.log('📁 Archivos en dist:', files);
-  } else {
-    console.warn('⚠️ Directorio dist no encontrado');
-  }
-} catch (error) {
-  console.error('❌ Error al verificar directorio dist:', error);
-}
-
-// Configuración del proxy
-const proxy = httpProxy.createProxyServer({
-  target: 'https://api.mercadolibre.com',
-  changeOrigin: true,
-  secure: true,
-  onProxyReq: (proxyReq, req, res) => {
-    if (req.headers.authorization) {
-      proxyReq.setHeader('Authorization', req.headers.authorization);
-    }
-    console.log('🔄 Proxy request headers:', proxyReq.getHeaders());
-  },
-  onError: (err, req, res) => {
-    console.error('❌ Error en proxy:', err);
-    res.status(500).json({ error: 'Error en el proxy', details: err.message });
-  }
-});
-
-// Middleware para manejar CORS
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  next();
-});
-
-// Ruta del proxy
-app.use('/api/proxy', (req, res) => {
-  console.log('🔄 Proxy request:', req.method, req.url);
-  proxy.web(req, res, {
-    target: 'https://api.mercadolibre.com',
-    changeOrigin: true,
-    secure: true
-  });
-});
-
-// Servir archivos estáticos primero
-app.use(express.static(distPath));
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  console.log('✅ Health check solicitado');
-  res.status(200).json({ 
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    env: process.env.NODE_ENV,
-    distExists: fs.existsSync(distPath)
-  });
-});
+console.log(`Iniciando servidor en ${HOST}:${PORT}`);
 
 // Endpoint para intercambio de código por token
 app.post('/api/auth/token', async (req, res) => {
@@ -110,19 +27,17 @@ app.post('/api/auth/token', async (req, res) => {
       return res.status(400).json({ error: 'Código de autorización requerido' });
     }
 
-    console.log('🔑 Intentando obtener token con código:', code);
     const response = await axios.post('https://api.mercadolibre.com/oauth/token', {
       grant_type: 'authorization_code',
-      client_id: process.env.ML_CLIENT_ID,
-      client_secret: process.env.ML_CLIENT_SECRET,
+      client_id: process.env.VITE_ML_CLIENT_ID,
+      client_secret: process.env.VITE_ML_CLIENT_SECRET,
       code,
-      redirect_uri: process.env.ML_REDIRECT_URI
+      redirect_uri: process.env.VITE_ML_REDIRECT_URI
     });
 
-    console.log('✅ Token obtenido exitosamente');
     res.json(response.data);
   } catch (error) {
-    console.error('❌ Error al obtener token:', error.response?.data || error.message);
+    console.error('Error al obtener token:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
       error: 'Error al obtener token',
       details: error.response?.data || error.message
@@ -139,18 +54,16 @@ app.post('/api/auth/refresh', async (req, res) => {
       return res.status(400).json({ error: 'Refresh token requerido' });
     }
 
-    console.log('🔄 Intentando refrescar token');
     const response = await axios.post('https://api.mercadolibre.com/oauth/token', {
       grant_type: 'refresh_token',
-      client_id: process.env.ML_CLIENT_ID,
-      client_secret: process.env.ML_CLIENT_SECRET,
+      client_id: process.env.VITE_ML_CLIENT_ID,
+      client_secret: process.env.VITE_ML_CLIENT_SECRET,
       refresh_token
     });
 
-    console.log('✅ Token refrescado exitosamente');
     res.json(response.data);
   } catch (error) {
-    console.error('❌ Error al refrescar token:', error.response?.data || error.message);
+    console.error('Error al refrescar token:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
       error: 'Error al refrescar token',
       details: error.response?.data || error.message
@@ -158,47 +71,151 @@ app.post('/api/auth/refresh', async (req, res) => {
   }
 });
 
+// Proxy para la API de MercadoLibre
+app.get('/api/proxy/trends', async (req, res) => {
+  try {
+    console.log('Solicitando tendencias a MercadoLibre');
+    const response = await axios.get('https://api.mercadolibre.com/trends/MLA');
+    console.log('Respuesta recibida de MercadoLibre');
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener tendencias:', error.message);
+    if (error.response) {
+      console.error('Detalles del error:', error.response.status, error.response.data);
+      res.status(error.response.status).json({
+        error: 'Error al obtener tendencias',
+        details: error.response.data
+      });
+    } else {
+      res.status(500).json({ error: 'Error al obtener tendencias' });
+    }
+  }
+});
+
+// Proxy para categorías
+app.get('/api/proxy/categories', async (req, res) => {
+  try {
+    const response = await axios.get('https://api.mercadolibre.com/sites/MLA/categories');
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener categorías:', error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener categorías',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Proxy para búsqueda de productos (sin autorización)
+app.get('/api/proxy/search', async (req, res) => {
+  try {
+    const { q, category, limit = 50, offset = 0 } = req.query;
+    
+    if (!q && !category) {
+      return res.status(400).json({ 
+        error: 'Se requiere un término de búsqueda (q) o una categoría' 
+      });
+    }
+
+    const baseUrl = 'https://api.mercadolibre.com/sites/MLA/search';
+    const params = new URLSearchParams();
+    
+    if (q) params.append('q', q);
+    if (category) params.append('category', category);
+    
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit.toString()) || 50));
+    const offsetNum = Math.max(0, parseInt(offset.toString()) || 0);
+    
+    params.append('limit', limitNum.toString());
+    params.append('offset', offsetNum.toString());
+
+    // Realizar la búsqueda sin enviar el token de autorización
+    const response = await axios.get(`${baseUrl}?${params.toString()}`);
+
+    res.json({
+      results: response.data.results,
+      paging: {
+        total: response.data.paging.total,
+        offset: response.data.paging.offset,
+        limit: response.data.paging.limit
+      }
+    });
+  } catch (error) {
+    console.error('Error en búsqueda de productos:', error.message);
+    if (error.response) {
+      res.status(error.response.status).json({
+        error: 'Error en búsqueda de productos',
+        details: error.response.data
+      });
+    } else {
+      res.status(500).json({ 
+        error: 'Error en búsqueda de productos',
+        message: error.message 
+      });
+    }
+  }
+});
+
+// Proxy para detalles de producto
+app.get('/api/proxy/items/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const response = await axios.get(`https://api.mercadolibre.com/items/${id}`);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener detalles del producto:', error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener detalles del producto',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Endpoint para obtener visitas de productos
+app.get('/api/proxy/items/:id/visits', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { last = 30, unit = 'day' } = req.query;
+
+    const response = await axios.get(`https://api.mercadolibre.com/items/${id}/visits/time_window`, {
+      params: {
+        last,
+        unit
+      }
+    });
+
+    // Transformar la respuesta al formato esperado
+    const results = response.data.results || [];
+    const formattedResults = results.map(item => ({
+      date: item.date,
+      total: item.total
+    }));
+
+    res.json({ results: formattedResults });
+  } catch (error) {
+    console.error('Error al obtener visitas:', error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener visitas',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
 // Endpoint para webhooks de MercadoLibre
 app.post('/api/webhooks/mercadolibre', (req, res) => {
-  console.log('🔄 Webhook recibido:', req.body);
+  console.log('Webhook recibido:', req.body);
   return res.status(200).json({ status: 'ok' });
 });
 
-// Todas las demás rutas sirven el index.html
+// Servir archivos estáticos
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// Todas las demás rutas sirven el index.html para el enrutamiento del lado del cliente
 app.get('*', (req, res) => {
-  console.log('🌐 Serving index.html for route:', req.url);
-  res.sendFile(path.join(distPath, 'index.html'));
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-// Manejo de errores global
-app.use((err, req, res, next) => {
-  console.error('❌ Error no manejado:', err);
-  res.status(500).json({
-    error: 'Error interno del servidor',
-    details: err.message
-  });
+// Iniciar el servidor
+app.listen(PORT, HOST, () => {
+  console.log(`Servidor ejecutándose en http://${HOST}:${PORT}`);
 });
-
-// Proceso de inicio del servidor
-const startServer = () => {
-  return new Promise((resolve, reject) => {
-    const server = app.listen(PORT, HOST, () => {
-      console.log(`✅ Servidor ejecutándose en http://${HOST}:${PORT}`);
-      console.log('📂 Directorio de archivos estáticos:', distPath);
-      resolve(server);
-    });
-
-    server.on('error', (error) => {
-      console.error('❌ Error al iniciar servidor:', error);
-      reject(error);
-    });
-  });
-};
-
-// Iniciar servidor con manejo de errores
-try {
-  await startServer();
-} catch (error) {
-  console.error('❌ Error fatal al iniciar servidor:', error);
-  process.exit(1);
-}

@@ -1,60 +1,24 @@
 import axios from 'axios';
-import { getAccessToken, refreshAccessToken } from './auth';
+import { getAccessToken } from './auth';
 
 const API_BASE_URL = 'https://api.mercadolibre.com';
 const PROXY_BASE_URL = '/api/proxy';
 
 // Crear una instancia de axios con configuración base
 const api = axios.create({
-  baseURL: window.location.origin, // Usar la URL del servidor actual
-  timeout: 10000, // 10 segundos de timeout
+  baseURL: API_BASE_URL,
 });
 
 // Interceptor para añadir el token de acceso a las peticiones
 api.interceptors.request.use(async (config) => {
-  try {
-    const token = await getAccessToken();
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-      console.log('Token añadido a la petición:', token.substring(0, 10) + '...');
-    } else {
-      console.warn('No se encontró token de acceso');
-    }
-  } catch (error) {
-    console.error('Error al obtener el token:', error);
+  const token = await getAccessToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 }, (error) => {
-  console.error('Error en el interceptor de request:', error);
   return Promise.reject(error);
 });
-
-// Interceptor para manejar errores de autenticación
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    if (error.response?.status === 401) {
-      console.log('Error de autenticación detectado, intentando refrescar token...');
-      try {
-        const newToken = await refreshAccessToken();
-        if (newToken) {
-          // Reintentar la petición original con el nuevo token
-          const config = error.config;
-          config.headers.Authorization = `Bearer ${newToken.access_token}`;
-          return api(config);
-        } else {
-          console.error('No se pudo refrescar el token');
-          // Redirigir al login si no se puede refrescar el token
-          window.location.href = '/auth/login';
-        }
-      } catch (refreshError) {
-        console.error('Error al refrescar el token:', refreshError);
-        window.location.href = '/auth/login';
-      }
-    }
-    return Promise.reject(error);
-  }
-);
 
 export interface Product {
   id: string;
@@ -81,49 +45,6 @@ export interface SearchResponse {
     total: number;
     offset: number;
     limit: number;
-  };
-}
-
-export interface Category {
-  id: string;
-  name: string;
-}
-
-export interface Trend {
-  keyword: string;
-  url: string;
-}
-
-export interface SellerInfo {
-  id: number;
-  nickname: string;
-  registration_date: string;
-  seller_reputation: {
-    level_id: string;
-    power_seller_status: string;
-    transactions: {
-      canceled: number;
-      completed: number;
-      total: number;
-    };
-    metrics: {
-      sales: {
-        period: string;
-        completed: number;
-      };
-      claims: {
-        rate: number;
-        value: number;
-      };
-      delayed_handling_time: {
-        rate: number;
-        value: number;
-      };
-      cancellations: {
-        rate: number;
-        value: number;
-      };
-    };
   };
 }
 
@@ -167,26 +88,17 @@ export const searchProducts = async (
       offset: offset.toString()
     });
 
-    console.log('Realizando búsqueda de productos:', query);
-    const response = await api.get(`${PROXY_BASE_URL}/search?${params.toString()}`);
-    console.log('Respuesta recibida:', response.data);
+    const response = await axios.get(`${PROXY_BASE_URL}/search?${params.toString()}`);
     return response.data;
   } catch (error) {
     console.error('Error en búsqueda de productos:', error);
-    if (axios.isAxiosError(error)) {
-      console.error('Detalles del error:', {
-        status: error.response?.status,
-        data: error.response?.data,
-        headers: error.response?.headers
-      });
-    }
     throw error;
   }
 };
 
 export const getProductDetails = async (productId: string): Promise<Product> => {
   try {
-    const response = await api.get(`${PROXY_BASE_URL}/items/${productId}`);
+    const response = await axios.get(`${PROXY_BASE_URL}/items/${productId}`);
     return response.data;
   } catch (error) {
     console.error('Error al obtener detalles del producto:', error);
@@ -194,34 +106,9 @@ export const getProductDetails = async (productId: string): Promise<Product> => 
   }
 };
 
-export const getCategories = async (): Promise<Category[]> => {
-  try {
-    const response = await api.get(`${PROXY_BASE_URL}/categories`);
-    return response.data;
-  } catch (error) {
-    console.error('Error al obtener categorías:', error);
-    throw error;
-  }
-};
-
-export const getTrends = async (): Promise<Trend[]> => {
-  try {
-    const response = await api.get(`${PROXY_BASE_URL}/trends`);
-    return response.data;
-  } catch (error) {
-    console.error('Error al obtener tendencias:', error);
-    return [];
-  }
-};
-
-export const getSellerInfo = async (sellerId: number): Promise<SellerInfo> => {
-  const response = await api.get(`/users/${sellerId}`);
-  return response.data;
-};
-
 export const getItemVisits = async (itemId: string): Promise<VisitData[]> => {
   try {
-    const response = await api.get(`${PROXY_BASE_URL}/items/${itemId}/visits`, {
+    const response = await axios.get(`${PROXY_BASE_URL}/items/${itemId}/visits`, {
       params: {
         last: 30,
         unit: 'day'

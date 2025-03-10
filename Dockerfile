@@ -1,63 +1,42 @@
-# Etapa de construcción
-FROM node:20-alpine AS builder
+# Build stage
+FROM node:20-alpine as build
 
 WORKDIR /app
 
-# Copiar archivos de dependencias
+# Copy package files and install dependencies
 COPY package*.json ./
-
-# Instalar dependencias
 RUN npm ci
 
-# Copiar código fuente
+# Copy source code
 COPY . .
 
-# Construir la aplicación
-RUN npm run build && \
-    ls -la dist/
+# Build the application
+RUN npm run build
 
-# Etapa de producción
+# Production stage
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Instalar dependencias necesarias para el servidor
+# Copy package files and install only production dependencies
 COPY package*.json ./
+RUN npm ci --production
 
-# Instalar TODAS las dependencias en producción
-RUN npm ci && \
-    npm ls express cors http-proxy axios && \
-    echo "Verificando instalación de dependencias..."
+# Copy built assets and server files
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/server.js ./server.js
 
-# Copiar archivos construidos y del servidor
-COPY --from=builder /app/dist ./dist/
-COPY --from=builder /app/server.js ./
-
-# Verificar archivos copiados
-RUN ls -la && \
-    ls -la dist/ && \
-    echo "Node version: $(node -v)" && \
-    echo "NPM version: $(npm -v)"
-
-# Crear directorio de logs y establecer permisos
-RUN mkdir -p /app/logs && \
-    chown -R node:node /app && \
-    chmod -R 755 /app/dist
-
-# Cambiar al usuario no root
-USER node
-
-# Exponer puerto
+# Expose port
 EXPOSE 8080
 
-# Variables de entorno
-ENV NODE_ENV=production \
-    PORT=8080 \
-    HOST=0.0.0.0
+# Set environment variables
+ENV PORT=8080
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+  CMD wget -qO- http://localhost:8080/ || exit 1
 
-# Comando para iniciar el servidor con mejor manejo de errores
-CMD ["node", "--trace-warnings", "--unhandled-rejections=strict", "server.js"]
+# Start the server
+CMD ["node", "server.js"]
