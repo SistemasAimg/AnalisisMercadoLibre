@@ -1,105 +1,75 @@
 import React, { useState, useEffect } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { BarChart3, DollarSign, TrendingUp, Users, AlertCircle, Store, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { 
+  BarChart3, DollarSign, TrendingUp, Users, AlertCircle, Store, 
+  ChevronDown, ChevronUp, ExternalLink, Filter, X 
+} from 'lucide-react';
 import { useQuery } from 'react-query';
 import { getMarketAnalysis, searchProducts, Product } from '../services/api';
 import { isAuthenticated } from '../services/auth';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
-interface StoreProducts {
-  [storeId: number]: {
-    isExpanded: boolean;
-    products: Product[];
-    isLoading: boolean;
-  };
+interface FilterOptions {
+  minPrice: number | '';
+  maxPrice: number | '';
+  condition: 'all' | 'new' | 'used';
+  officialStoresOnly: boolean;
+  minSales: number | '';
 }
 
 const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
-  const [showOfficialStoresOnly, setShowOfficialStoresOnly] = useState(false);
   const [isUserAuthenticated, setIsUserAuthenticated] = useState(false);
   const [showAuthAlert, setShowAuthAlert] = useState(false);
-  const [storeProducts, setStoreProducts] = useState<StoreProducts>({});
-  
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [dateRange] = useState({ 
+    start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 días atrás
+    end: new Date() 
+  });
+  const [filters, setFilters] = useState<FilterOptions>({
+    minPrice: '',
+    maxPrice: '',
+    condition: 'all',
+    officialStoresOnly: false,
+    minSales: ''
+  });
+
+  // Primero buscar productos para seleccionar uno
+  const { data: searchResults, isLoading: isSearching } = useQuery(
+    ['searchProducts', searchQuery],
+    () => searchProducts(searchQuery),
+    {
+      enabled: !!searchQuery && isUserAuthenticated,
+      onSuccess: (data) => {
+        if (data.results.length > 0 && !selectedProduct) {
+          setSelectedProduct(data.results[0]);
+        }
+      }
+    }
+  );
+
+  // Luego obtener el análisis de mercado para el producto seleccionado
+  const { 
+    data: analysis, 
+    isLoading: isAnalyzing,
+    error 
+  } = useQuery(
+    ['marketAnalysis', selectedProduct?.id, dateRange],
+    () => selectedProduct ? getMarketAnalysis(selectedProduct, dateRange, filters.officialStoresOnly) : null,
+    {
+      enabled: !!selectedProduct && isUserAuthenticated
+    }
+  );
+
   useEffect(() => {
     const authStatus = isAuthenticated();
     setIsUserAuthenticated(authStatus);
     setShowAuthAlert(!authStatus);
   }, []);
-  
-  const { 
-    data: analysis, 
-    isLoading, 
-    error 
-  } = useQuery(
-    ['marketAnalysis', searchQuery, showOfficialStoresOnly],
-    () => getMarketAnalysis(searchQuery, showOfficialStoresOnly),
-    {
-      enabled: !!searchQuery && isUserAuthenticated,
-      staleTime: 1000 * 60 * 15,
-    }
-  );
 
-  const toggleStoreProducts = async (storeId: number) => {
-    setStoreProducts(prev => ({
-      ...prev,
-      [storeId]: {
-        isExpanded: !prev[storeId]?.isExpanded,
-        products: prev[storeId]?.products || [],
-        isLoading: !prev[storeId]?.products.length
-      }
-    }));
-
-    if (!storeProducts[storeId]?.products.length) {
-      try {
-        const response = await searchProducts(searchQuery, 50, 0, true);
-        const storeProducts = response.results.filter(
-          product => product.official_store_id === storeId
-        );
-
-        setStoreProducts(prev => ({
-          ...prev,
-          [storeId]: {
-            isExpanded: true,
-            products: storeProducts,
-            isLoading: false
-          }
-        }));
-      } catch (error) {
-        console.error('Error al obtener productos de la tienda:', error);
-        setStoreProducts(prev => ({
-          ...prev,
-          [storeId]: {
-            isExpanded: false,
-            products: [],
-            isLoading: false
-          }
-        }));
-      }
-    }
-  };
-
-  const priceData = {
-    labels: analysis?.priceHistory.map(item => item.date) || [],
-    datasets: [
-      {
-        label: 'Precio promedio',
-        data: analysis?.priceHistory.map(item => item.price) || [],
-        borderColor: 'rgb(53, 162, 235)',
-        backgroundColor: 'rgba(53, 162, 235, 0.5)',
-      },
-    ],
-  };
-
-  const options = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-    },
-  };
+  const isLoading = isSearching || isAnalyzing;
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('es-AR', {
@@ -133,7 +103,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             Realiza una búsqueda para ver análisis
           </h3>
           <p className="text-gray-600">
-            Busca productos o selecciona una categoría para obtener análisis detallados del mercado.
+            Busca productos para obtener análisis detallados del mercado.
           </p>
         </div>
       </div>
@@ -150,7 +120,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
           </h2>
         </div>
         
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
           <div className="flex items-start">
             <AlertCircle size={24} className="text-yellow-500 mr-3 mt-0.5" />
             <div>
@@ -222,21 +192,110 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             Análisis de mercado: {searchQuery}
           </h2>
         </div>
-        <div className="flex items-center">
-          <label className="inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showOfficialStoresOnly}
-              onChange={(e) => setShowOfficialStoresOnly(e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            <span className="ms-3 text-sm font-medium text-gray-700">
-              Solo Tiendas Oficiales
-            </span>
-          </label>
-        </div>
+        <button
+          onClick={() => setShowFilters(!showFilters)}
+          className="flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+        >
+          <Filter size={18} className="mr-2" />
+          Filtros
+        </button>
       </div>
+
+      {showFilters && (
+        <div className="bg-gray-50 p-4 rounded-lg mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-medium text-gray-800">Filtros de análisis</h3>
+            <button
+              onClick={() => setFilters({
+                minPrice: '',
+                maxPrice: '',
+                condition: 'all',
+                officialStoresOnly: false,
+                minSales: ''
+              })}
+              className="text-blue-600 hover:text-blue-800 flex items-center"
+            >
+              <X size={16} className="mr-1" />
+              Resetear filtros
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Rango de precios
+              </label>
+              <div className="flex space-x-2">
+                <input
+                  type="number"
+                  placeholder="Mín"
+                  value={filters.minPrice}
+                  onChange={(e) => setFilters(prev => ({
+                    ...prev,
+                    minPrice: e.target.value ? Number(e.target.value) : ''
+                  }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="number"
+                  placeholder="Máx"
+                  value={filters.maxPrice}
+                  onChange={(e) => setFilters(prev => ({
+                    ...prev,
+                    maxPrice: e.target.value ? Number(e.target.value) : ''
+                  }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Condición
+              </label>
+              <select
+                value={filters.condition}
+                onChange={(e) => setFilters(prev => ({
+                  ...prev,
+                  condition: e.target.value as 'all' | 'new' | 'used'
+                }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">Todos</option>
+                <option value="new">Nuevo</option>
+                <option value="used">Usado</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Ventas mínimas
+              </label>
+              <input
+                type="number"
+                placeholder="Mínimo de ventas"
+                value={filters.minSales}
+                onChange={(e) => setFilters(prev => ({
+                  ...prev,
+                  minSales: e.target.value ? Number(e.target.value) : ''
+                }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+          <div className="mt-4">
+            <label className="inline-flex items-center">
+              <input
+                type="checkbox"
+                checked={filters.officialStoresOnly}
+                onChange={(e) => setFilters(prev => ({
+                  ...prev,
+                  officialStoresOnly: e.target.checked
+                }))}
+                className="form-checkbox h-4 w-4 text-blue-600"
+              />
+              <span className="ml-2 text-gray-700">Solo tiendas oficiales</span>
+            </label>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <div className="bg-gray-50 p-4 rounded-lg">
@@ -245,8 +304,8 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             <h3 className="ml-2 text-gray-700 font-medium">Precio promedio</h3>
           </div>
           <p className="text-2xl font-bold text-gray-900">{formatPrice(analysis.averagePrice)}</p>
-          <p className={`text-sm ${getTrendClass(analysis.salesTrend)}`}>
-            {formatPercent(analysis.salesTrend)} vs. mes anterior
+          <p className={`text-sm ${getTrendClass(analysis.priceTrend)}`}>
+            {formatPercent(analysis.priceTrend)} vs. mes anterior
           </p>
         </div>
         <div className="bg-gray-50 p-4 rounded-lg">
@@ -254,123 +313,66 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             <Store size={24} className="text-green-500" />
             <h3 className="ml-2 text-gray-700 font-medium">Tiendas Oficiales</h3>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{analysis.officialStores.total}</p>
+          <p className="text-2xl font-bold text-gray-900">{analysis.officialStores}</p>
           <p className="text-sm text-gray-600">
-            {analysis.officialStores.percentage.toFixed(1)}% del mercado
+            {analysis.officialStorePercentage}% del mercado
           </p>
         </div>
         <div className="bg-gray-50 p-4 rounded-lg">
           <div className="flex items-center mb-2">
             <Users size={24} className="text-purple-500" />
-            <h3 className="ml-2 text-gray-700 font-medium">Total Vendedores</h3>
+            <h3 className="ml-2 text-gray-700 font-medium">Vendedores activos</h3>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{analysis.totalSellers}</p>
+          <p className="text-2xl font-bold text-gray-900">{analysis.activeSellers}</p>
           <p className="text-sm text-gray-600">
-            Competencia: {analysis.competitionLevel === 'high' ? 'Alta' : 
-                         analysis.competitionLevel === 'medium' ? 'Media' : 'Baja'}
+            {analysis.newSellers} nuevos este mes
           </p>
         </div>
       </div>
 
-      {analysis.officialStores.total > 0 && (
-        <div className="bg-gray-50 p-4 rounded-lg mb-6">
-          <h3 className="text-lg font-medium text-gray-800 mb-4">Tiendas Oficiales</h3>
-          <div className="space-y-4">
-            {analysis.officialStores.stores.map(store => (
-              <div key={store.id} className="bg-white p-4 rounded-lg shadow-sm">
-                <button 
-                  onClick={() => toggleStoreProducts(store.id)}
-                  className="w-full flex items-center justify-between"
-                >
-                  <div>
-                    <h4 className="font-medium text-gray-800">{store.name}</h4>
-                    <div className="text-sm text-gray-600 mt-1">
-                      <span>{store.productsCount} productos</span>
-                      <span className="mx-2">•</span>
-                      <span>Precio promedio: {formatPrice(store.averagePrice)}</span>
-                    </div>
-                  </div>
-                  {storeProducts[store.id]?.isExpanded ? (
-                    <ChevronUp size={20} className="text-gray-500" />
-                  ) : (
-                    <ChevronDown size={20} className="text-gray-500" />
-                  )}
-                </button>
-
-                {storeProducts[store.id]?.isExpanded && (
-                  <div className="mt-4 border-t pt-4">
-                    {storeProducts[store.id]?.isLoading ? (
-                      <div className="flex justify-center py-4">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                      </div>
-                    ) : storeProducts[store.id]?.products.length > 0 ? (
-                      <div className="space-y-4">
-                        {storeProducts[store.id].products.map(product => (
-                          <div key={product.id} className="flex items-start space-x-4 p-2 hover:bg-gray-50 rounded-lg">
-                            <img 
-                              src={product.thumbnail.replace('http://', 'https://')}
-                              alt={product.title}
-                              className="w-20 h-20 object-contain rounded"
-                            />
-                            <div className="flex-1">
-                              <h5 className="font-medium text-gray-800">{product.title}</h5>
-                              <p className="text-lg font-bold text-gray-900 mt-1">
-                                {formatPrice(product.price)}
-                              </p>
-                              <div className="flex items-center mt-2">
-                                <span className="text-sm text-gray-600 mr-4">
-                                  Stock: {product.available_quantity}
-                                </span>
-                                <span className="text-sm text-gray-600">
-                                  Vendidos: {product.sold_quantity}
-                                </span>
-                              </div>
-                            </div>
-                            <a 
-                              href={product.permalink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center text-blue-600 hover:text-blue-800"
-                            >
-                              <ExternalLink size={18} />
-                            </a>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-center text-gray-600 py-4">
-                        No se encontraron productos para esta tienda
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="mb-8">
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <h3 className="text-lg font-medium text-gray-800 mb-4">Tendencia de precios</h3>
-          <Line options={options} data={priceData} />
-        </div>
+      <div className="bg-gray-50 p-4 rounded-lg mb-6">
+        <h3 className="text-lg font-medium text-gray-800 mb-4">Tendencia de precios</h3>
+        <Line 
+          data={{
+            labels: analysis.priceHistory.map(item => item.date),
+            datasets: [{
+              label: 'Precio promedio',
+              data: analysis.priceHistory.map(item => item.price),
+              borderColor: 'rgb(59, 130, 246)',
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              tension: 0.4
+            }]
+          }}
+          options={{
+            responsive: true,
+            plugins: {
+              legend: {
+                position: 'top'
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: false
+              }
+            }
+          }}
+        />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-gray-50 p-4 rounded-lg">
-          <h3 className="text-lg font-medium text-gray-800 mb-4">Distribución de precios</h3>
+          <h3 className="text-lg font-medium text-gray-800 mb-4">Distribución de ventas</h3>
           <div className="space-y-4">
-            {analysis.priceDistribution.map((range, index) => (
+            {analysis.salesDistribution.map((item, index) => (
               <div key={index} className="space-y-1">
                 <div className="flex justify-between text-sm text-gray-600">
-                  <span>{range.range}</span>
-                  <span>{range.count} productos</span>
+                  <span>{item.range}</span>
+                  <span>{item.percentage}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div
                     className="bg-blue-600 h-2 rounded-full"
-                    style={{ width: `${range.percentage}%` }}
+                    style={{ width: `${item.percentage}%` }}
                   ></div>
                 </div>
               </div>
@@ -379,35 +381,16 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
         </div>
 
         <div className="bg-gray-50 p-4 rounded-lg">
-          <h3 className="text-lg font-medium text-gray-800 mb-4">Top Vendedores</h3>
-          <div className="space-y-3">
-            {analysis.topSellers.map((seller) => (
-              <div key={seller.id} className="flex items-center justify-between bg-white p-3 rounded-lg shadow-sm">
-                <div>
-                  <p className="font-medium text-gray-800">{seller.nickname}</p>
-                  <p className="text-sm text-gray-600">Ventas: {seller.salesCount}</p>
-                </div>
-                {seller.isOfficialStore && (
-                  <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                    Tienda Oficial
-                  </span>
-                )}
-              </div>
+          <h3 className="text-lg font-medium text-gray-800 mb-4">Recomendaciones</h3>
+          <ul className="space-y-2">
+            {analysis.recommendations.map((recommendation, index) => (
+              <li key={index} className="flex items-start">
+                <span className="inline-block w-2 h-2 bg-blue-500 rounded-full mt-2 mr-2"></span>
+                <span className="text-gray-700">{recommendation}</span>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
-      </div>
-
-      <div className="bg-gray-50 p-4 rounded-lg">
-        <h3 className="text-lg font-medium text-gray-800 mb-4">Recomendaciones</h3>
-        <ul className="space-y-2 text-gray-700">
-          {analysis.recommendations.map((recommendation, index) => (
-            <li key={index} className="flex items-start">
-              <span className="inline-block w-2 h-2 bg-blue-500 rounded-full mt-2 mr-2"></span>
-              {recommendation}
-            </li>
-          ))}
-        </ul>
       </div>
     </div>
   );

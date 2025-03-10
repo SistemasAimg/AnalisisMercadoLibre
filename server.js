@@ -104,7 +104,7 @@ app.get('/api/proxy/categories', async (req, res) => {
   }
 });
 
-// Proxy para búsqueda de productos
+// Proxy para búsqueda de productos (sin autorización)
 app.get('/api/proxy/search', async (req, res) => {
   try {
     const { q, category, limit = 50, offset = 0 } = req.query;
@@ -131,7 +131,7 @@ app.get('/api/proxy/search', async (req, res) => {
     params.append('limit', limitNum.toString());
     params.append('offset', offsetNum.toString());
 
-    // Realizar la búsqueda
+    // Realizar la búsqueda sin enviar el token de autorización
     const response = await axios.get(`${baseUrl}?${params.toString()}`);
 
     // Procesar y enviar respuesta
@@ -169,6 +169,36 @@ app.get('/api/proxy/items/:id', async (req, res) => {
     console.error('Error al obtener detalles del producto:', error.message);
     res.status(error.response?.status || 500).json({
       error: 'Error al obtener detalles del producto',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Endpoint para obtener visitas de productos
+app.get('/api/proxy/items/:id/visits', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { last = 30, unit = 'day' } = req.query;
+
+    const response = await axios.get(`https://api.mercadolibre.com/items/${id}/visits/time_window`, {
+      params: {
+        last,
+        unit
+      }
+    });
+
+    // Transformar la respuesta al formato esperado
+    const results = response.data.results || [];
+    const formattedResults = results.map(item => ({
+      date: item.date,
+      total: item.total
+    }));
+
+    res.json({ results: formattedResults });
+  } catch (error) {
+    console.error('Error al obtener visitas:', error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener visitas',
       details: error.response?.data || error.message
     });
   }
