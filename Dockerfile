@@ -1,42 +1,52 @@
-# Build stage
-FROM node:20-alpine as build
+# Etapa de construcción
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files and install dependencies
+# Copiar archivos de dependencias
 COPY package*.json ./
+
+# Instalar dependencias
 RUN npm ci
 
-# Copy source code
+# Copiar código fuente
 COPY . .
 
-# Build the application
+# Construir la aplicación
 RUN npm run build
 
-# Production stage
+# Etapa de producción
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files and install only production dependencies
+# Instalar solo dependencias de producción
 COPY package*.json ./
-RUN npm ci --production
+RUN npm ci --omit=dev
 
-# Copy built assets and server files
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/server.js ./server.js
+# Copiar archivos construidos y del servidor
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/server.js ./
+COPY --from=builder /app/.env ./
 
-# Expose port
+# Crear directorio de logs y establecer permisos
+RUN mkdir -p /app/logs && \
+    chown -R node:node /app
+
+# Cambiar al usuario no root
+USER node
+
+# Exponer puerto
 EXPOSE 8080
 
-# Set environment variables
-ENV PORT=8080
+# Variables de entorno
 ENV NODE_ENV=production
+ENV PORT=8080
 ENV HOST=0.0.0.0
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-  CMD wget -qO- http://localhost:8080/ || exit 1
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
-# Start the server
+# Comando para iniciar el servidor
 CMD ["node", "server.js"]
