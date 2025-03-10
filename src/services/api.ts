@@ -1,14 +1,20 @@
 import axios from 'axios';
 import { getAccessToken } from './auth';
 
-// Create an axios instance for MercadoLibre API
-const mercadoLibreApi = axios.create({
-  baseURL: 'https://api.mercadolibre.com',
+// Single axios instance for all API calls through our proxy
+const api = axios.create({
+  baseURL: '/api/proxy'
 });
 
-// Create an axios instance for our backend proxy
-const proxyApi = axios.create({
-  baseURL: '/api/proxy',
+// Add auth token when available
+api.interceptors.request.use(async (config) => {
+  const token = await getAccessToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+}, (error) => {
+  return Promise.reject(error);
 });
 
 export interface Product {
@@ -44,6 +50,15 @@ export interface VisitData {
   total: number;
 }
 
+export interface Category {
+  id: string;
+  name: string;
+}
+
+export interface Trend {
+  keyword: string;
+}
+
 export interface MarketAnalysis {
   averagePrice: number;
   priceRange: {
@@ -67,41 +82,20 @@ export interface MarketAnalysis {
   }>;
 }
 
-export interface Category {
-  id: string;
-  name: string;
-}
-
-export interface Trend {
-  keyword: string;
-}
-
 export const searchProducts = async (
   query: string,
   limit = 50,
   offset = 0
 ): Promise<SearchResponse> => {
   try {
-    const token = await getAccessToken();
-    const headers: Record<string, string> = {};
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await mercadoLibreApi.get('/sites/MLA/search', {
+    const response = await api.get('/search', {
       params: {
         q: query,
         limit,
         offset
-      },
-      headers
+      }
     });
-
-    return {
-      results: response.data.results,
-      paging: response.data.paging
-    };
+    return response.data;
   } catch (error) {
     console.error('Error en búsqueda de productos:', error);
     throw error;
@@ -110,14 +104,7 @@ export const searchProducts = async (
 
 export const getProductDetails = async (productId: string): Promise<Product> => {
   try {
-    const token = await getAccessToken();
-    const headers: Record<string, string> = {};
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await mercadoLibreApi.get(`/items/${productId}`, { headers });
+    const response = await api.get(`/items/${productId}`);
     return response.data;
   } catch (error) {
     console.error('Error al obtener detalles del producto:', error);
@@ -127,19 +114,11 @@ export const getProductDetails = async (productId: string): Promise<Product> => 
 
 export const getItemVisits = async (itemId: string): Promise<VisitData[]> => {
   try {
-    const token = await getAccessToken();
-    const headers: Record<string, string> = {};
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await mercadoLibreApi.get(`/items/${itemId}/visits/time_window`, {
+    const response = await api.get(`/items/${itemId}/visits`, {
       params: {
         last: 30,
         unit: 'day'
-      },
-      headers
+      }
     });
     return response.data.results || [];
   } catch (error) {
@@ -150,14 +129,7 @@ export const getItemVisits = async (itemId: string): Promise<VisitData[]> => {
 
 export const getCategories = async (): Promise<Category[]> => {
   try {
-    const token = await getAccessToken();
-    const headers: Record<string, string> = {};
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await mercadoLibreApi.get('/sites/MLA/categories', { headers });
+    const response = await api.get('/categories');
     return response.data;
   } catch (error) {
     console.error('Error al obtener categorías:', error);
@@ -167,14 +139,7 @@ export const getCategories = async (): Promise<Category[]> => {
 
 export const getTrends = async (): Promise<Trend[]> => {
   try {
-    const token = await getAccessToken();
-    const headers: Record<string, string> = {};
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await mercadoLibreApi.get('/trends/MLA', { headers });
+    const response = await api.get('/trends');
     return response.data;
   } catch (error) {
     console.error('Error al obtener tendencias:', error);
@@ -223,12 +188,12 @@ export const getMarketAnalysis = async (
     const officialStores = productsToAnalyze.filter(p => p.seller.id.toString().startsWith('999')).length;
     const officialStorePercentage = Math.round((officialStores / productsToAnalyze.length) * 100);
 
-    // Determinar nivel de competencia basado en datos reales
+    // Determinar nivel de competencia
     let competitionLevel: 'low' | 'medium' | 'high' = 'low';
     if (uniqueSellers > 50) competitionLevel = 'high';
     else if (uniqueSellers > 20) competitionLevel = 'medium';
 
-    // Calcular distribución de ventas real
+    // Calcular distribución de ventas
     const salesRanges = [
       { min: 0, max: 10, count: 0 },
       { min: 11, max: 50, count: 0 },
@@ -248,7 +213,7 @@ export const getMarketAnalysis = async (
       percentage: Math.round((range.count / productsToAnalyze.length) * 100)
     }));
 
-    // Generar recomendaciones basadas en datos reales
+    // Generar recomendaciones
     const recommendations = [];
     
     if (priceTrend > 10) {
