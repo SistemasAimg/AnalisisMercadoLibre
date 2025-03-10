@@ -74,10 +74,10 @@ app.post('/api/auth/token', async (req, res) => {
 
     const response = await axios.post('https://api.mercadolibre.com/oauth/token', {
       grant_type: 'authorization_code',
-      client_id: process.env.VITE_ML_CLIENT_ID,
-      client_secret: process.env.VITE_ML_CLIENT_SECRET,
+      client_id: process.env.ML_CLIENT_ID,
+      client_secret: process.env.ML_CLIENT_SECRET,
       code,
-      redirect_uri: process.env.VITE_ML_REDIRECT_URI
+      redirect_uri: process.env.ML_REDIRECT_URI
     });
 
     res.json(response.data);
@@ -101,8 +101,8 @@ app.post('/api/auth/refresh', async (req, res) => {
 
     const response = await axios.post('https://api.mercadolibre.com/oauth/token', {
       grant_type: 'refresh_token',
-      client_id: process.env.VITE_ML_CLIENT_ID,
-      client_secret: process.env.VITE_ML_CLIENT_SECRET,
+      client_id: process.env.ML_CLIENT_ID,
+      client_secret: process.env.ML_CLIENT_SECRET,
       refresh_token
     });
 

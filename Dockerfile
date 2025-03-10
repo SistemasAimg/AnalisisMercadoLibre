@@ -27,7 +27,6 @@ RUN npm ci --omit=dev
 # Copiar archivos construidos y del servidor
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server.js ./
-COPY --from=builder /app/.env ./
 
 # Crear directorio de logs y establecer permisos
 RUN mkdir -p /app/logs && \
