@@ -7,7 +7,7 @@ const api = axios.create({
 });
 
 // ID de la tienda oficial de Garmin Argentina
-const GARMIN_STORE_ID = 2159; // Asegúrate de que este sea el ID correcto de la tienda de Garmin
+const GARMIN_STORE_ID = 225076335; // Asegúrate de que este sea el ID correcto de la tienda de Garmin
 
 // Add auth token when available
 api.interceptors.request.use(async (config) => {
