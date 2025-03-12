@@ -17,6 +17,14 @@ api.interceptors.request.use(async (config) => {
   return Promise.reject(error);
 });
 
+export interface FilterOptions {
+  minPrice?: number;
+  maxPrice?: number;
+  condition?: 'all' | 'new' | 'used';
+  officialStoresOnly?: boolean;
+  minSales?: number;
+}
+
 export interface Product {
   id: string;
   title: string;
@@ -87,6 +95,7 @@ export interface MarketAnalysis {
 
 export const searchProducts = async (
   query: string,
+  filters?: FilterOptions,
   limit = 50,
   offset = 0
 ): Promise<SearchResponse> => {
@@ -95,9 +104,21 @@ export const searchProducts = async (
       params: {
         q: query,
         limit,
-        offset
+        offset,
+        min_price: filters?.minPrice,
+        max_price: filters?.maxPrice,
+        condition: filters?.condition !== 'all' ? filters?.condition : undefined,
+        official_store_only: filters?.officialStoresOnly
       }
     });
+    
+    // Aplicar filtro de ventas mínimas en el cliente
+    if (filters?.minSales && filters.minSales > 0) {
+      response.data.results = response.data.results.filter(
+        product => product.sold_quantity >= filters.minSales!
+      );
+    }
+    
     return response.data;
   } catch (error) {
     console.error('Error en búsqueda de productos:', error);
@@ -105,75 +126,45 @@ export const searchProducts = async (
   }
 };
 
-export const getProductDetails = async (productId: string): Promise<Product> => {
+export const getProductVisits = async (
+  productName: string,
+  officialStoresOnly: boolean = false
+): Promise<VisitData[]> => {
   try {
-    const response = await api.get(`/items/${productId}`);
-    return response.data;
-  } catch (error) {
-    console.error('Error al obtener detalles del producto:', error);
-    throw error;
-  }
-};
-
-export const getItemVisits = async (itemId: string): Promise<VisitData[]> => {
-  try {
-    const response = await api.get(`/items/${itemId}/visits`, {
+    const response = await api.get('/product-visits', {
       params: {
-        last: 30,
-        unit: 'day'
+        q: productName,
+        official_store_only: officialStoresOnly
       }
     });
     return response.data.results || [];
   } catch (error) {
-    console.error('Error al obtener historial de visitas:', error);
+    console.error('Error al obtener visitas del producto:', error);
     return [];
-  }
-};
-
-export const getCategories = async (): Promise<Category[]> => {
-  try {
-    const response = await api.get('/categories');
-    return response.data;
-  } catch (error) {
-    console.error('Error al obtener categorías:', error);
-    throw error;
-  }
-};
-
-export const getTrends = async (): Promise<Trend[]> => {
-  try {
-    const response = await api.get('/trends');
-    return response.data;
-  } catch (error) {
-    console.error('Error al obtener tendencias:', error);
-    throw error;
   }
 };
 
 export const getMarketAnalysis = async (
   product: Product,
   dateRange: { start: Date; end: Date },
-  officialStoresOnly: boolean = false
+  filters?: FilterOptions
 ): Promise<MarketAnalysis> => {
   try {
-    // Buscar productos similares
-    const similarProducts = await searchProducts(product.title, 50);
+    // Buscar productos similares con filtros
+    const similarProducts = await searchProducts(product.title, filters);
     
     if (!similarProducts.results.length) {
       throw new Error('No hay suficientes datos para realizar un análisis');
     }
 
-    // Filtrar productos por tiendas oficiales si es necesario
-    let productsToAnalyze = similarProducts.results;
-    if (officialStoresOnly) {
-      productsToAnalyze = productsToAnalyze.filter(p => p.official_store_id != null);
-    }
-
-    // Obtener visitas del producto
-    const visitHistory = await getItemVisits(product.id);
+    // Obtener visitas totales del producto
+    const visitHistory = await getProductVisits(
+      product.title,
+      filters?.officialStoresOnly
+    );
 
     // Calcular métricas reales
-    const prices = productsToAnalyze.map(item => item.price);
+    const prices = similarProducts.results.map(item => item.price);
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
     const averagePrice = prices.reduce((sum, price) => sum + price, 0) / prices.length;
@@ -182,14 +173,14 @@ export const getMarketAnalysis = async (
     const priceTrend = ((product.price - averagePrice) / averagePrice) * 100;
 
     // Calcular tendencia de ventas basada en datos reales
-    const totalSales = productsToAnalyze.reduce((sum, item) => sum + item.sold_quantity, 0);
-    const avgSales = totalSales / productsToAnalyze.length;
+    const totalSales = similarProducts.results.reduce((sum, item) => sum + item.sold_quantity, 0);
+    const avgSales = totalSales / similarProducts.results.length;
     const salesTrend = ((product.sold_quantity - avgSales) / avgSales) * 100;
 
     // Contar vendedores únicos y tiendas oficiales
-    const uniqueSellers = new Set(productsToAnalyze.map(item => item.seller.id)).size;
-    const officialStores = productsToAnalyze.filter(p => p.official_store_id != null).length;
-    const officialStorePercentage = Math.round((officialStores / productsToAnalyze.length) * 100);
+    const uniqueSellers = new Set(similarProducts.results.map(item => item.seller.id)).size;
+    const officialStores = similarProducts.results.filter(p => p.official_store_id != null).length;
+    const officialStorePercentage = Math.round((officialStores / similarProducts.results.length) * 100);
 
     // Determinar nivel de competencia
     let competitionLevel: 'low' | 'medium' | 'high' = 'low';
@@ -204,7 +195,7 @@ export const getMarketAnalysis = async (
       { min: 101, max: Infinity, count: 0 }
     ];
 
-    productsToAnalyze.forEach(item => {
+    similarProducts.results.forEach(item => {
       const range = salesRanges.find(r => item.sold_quantity >= r.min && item.sold_quantity <= r.max);
       if (range) range.count++;
     });
@@ -213,7 +204,7 @@ export const getMarketAnalysis = async (
       range: index === salesRanges.length - 1 
         ? `${range.min}+ ventas`
         : `${range.min}-${range.max} ventas`,
-      percentage: Math.round((range.count / productsToAnalyze.length) * 100)
+      percentage: Math.round((range.count / similarProducts.results.length) * 100)
     }));
 
     // Generar recomendaciones basadas en datos reales
@@ -249,7 +240,7 @@ export const getMarketAnalysis = async (
       averagePrice,
       priceRange: { min: minPrice, max: maxPrice },
       totalSellers: uniqueSellers,
-      totalListings: productsToAnalyze.length,
+      totalListings: similarProducts.results.length,
       visitHistory,
       salesTrend,
       priceTrend,
@@ -258,7 +249,7 @@ export const getMarketAnalysis = async (
       officialStores,
       officialStorePercentage,
       activeSellers: uniqueSellers,
-      newSellers: Math.floor(uniqueSellers * 0.15), // Estimado basado en vendedores activos
+      newSellers: Math.floor(uniqueSellers * 0.15),
       salesDistribution
     };
   } catch (error) {

@@ -6,18 +6,10 @@ import {
   ChevronDown, ChevronUp, ExternalLink, Filter, X 
 } from 'lucide-react';
 import { useQuery } from 'react-query';
-import { getMarketAnalysis, searchProducts, Product } from '../services/api';
+import { getMarketAnalysis, searchProducts, Product, FilterOptions } from '../services/api';
 import { isAuthenticated } from '../services/auth';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
-
-interface FilterOptions {
-  minPrice: number | '';
-  maxPrice: number | '';
-  condition: 'all' | 'new' | 'used';
-  officialStoresOnly: boolean;
-  minSales: number | '';
-}
 
 const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
   const [isUserAuthenticated, setIsUserAuthenticated] = useState(false);
@@ -25,21 +17,21 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [dateRange] = useState({ 
-    start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 días atrás
+    start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
     end: new Date() 
   });
   const [filters, setFilters] = useState<FilterOptions>({
-    minPrice: '',
-    maxPrice: '',
+    minPrice: undefined,
+    maxPrice: undefined,
     condition: 'all',
     officialStoresOnly: false,
-    minSales: ''
+    minSales: undefined
   });
 
   // Primero buscar productos para seleccionar uno
-  const { data: searchResults, isLoading: isSearching } = useQuery(
-    ['searchProducts', searchQuery],
-    () => searchProducts(searchQuery),
+  const { data: searchResults, isLoading: isSearching, refetch: refetchSearch } = useQuery(
+    ['searchProducts', searchQuery, filters],
+    () => searchProducts(searchQuery, filters),
     {
       enabled: !!searchQuery && isUserAuthenticated,
       onSuccess: (data) => {
@@ -54,10 +46,11 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
   const { 
     data: analysis, 
     isLoading: isAnalyzing,
+    refetch: refetchAnalysis,
     error 
   } = useQuery(
-    ['marketAnalysis', selectedProduct?.id, dateRange],
-    () => selectedProduct ? getMarketAnalysis(selectedProduct, dateRange, filters.officialStoresOnly) : null,
+    ['marketAnalysis', selectedProduct?.id, dateRange, filters],
+    () => selectedProduct ? getMarketAnalysis(selectedProduct, dateRange, filters) : null,
     {
       enabled: !!selectedProduct && isUserAuthenticated
     }
@@ -68,6 +61,27 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     setIsUserAuthenticated(authStatus);
     setShowAuthAlert(!authStatus);
   }, []);
+
+  const handleApplyFilters = () => {
+    refetchSearch();
+    if (selectedProduct) {
+      refetchAnalysis();
+    }
+  };
+
+  const handleResetFilters = () => {
+    setFilters({
+      minPrice: undefined,
+      maxPrice: undefined,
+      condition: 'all',
+      officialStoresOnly: false,
+      minSales: undefined
+    });
+    refetchSearch();
+    if (selectedProduct) {
+      refetchAnalysis();
+    }
+  };
 
   const isLoading = isSearching || isAnalyzing;
 
@@ -206,13 +220,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-medium text-gray-800">Filtros de análisis</h3>
             <button
-              onClick={() => setFilters({
-                minPrice: '',
-                maxPrice: '',
-                condition: 'all',
-                officialStoresOnly: false,
-                minSales: ''
-              })}
+              onClick={handleResetFilters}
               className="text-blue-600 hover:text-blue-800 flex items-center"
             >
               <X size={16} className="mr-1" />
@@ -228,20 +236,20 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
                 <input
                   type="number"
                   placeholder="Mín"
-                  value={filters.minPrice}
+                  value={filters.minPrice || ''}
                   onChange={(e) => setFilters(prev => ({
                     ...prev,
-                    minPrice: e.target.value ? Number(e.target.value) : ''
+                    minPrice: e.target.value ? Number(e.target.value) : undefined
                   }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <input
                   type="number"
                   placeholder="Máx"
-                  value={filters.maxPrice}
+                  value={filters.maxPrice || ''}
                   onChange={(e) => setFilters(prev => ({
                     ...prev,
-                    maxPrice: e.target.value ? Number(e.target.value) : ''
+                    maxPrice: e.target.value ? Number(e.target.value) : undefined
                   }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -271,10 +279,10 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
               <input
                 type="number"
                 placeholder="Mínimo de ventas"
-                value={filters.minSales}
+                value={filters.minSales || ''}
                 onChange={(e) => setFilters(prev => ({
                   ...prev,
-                  minSales: e.target.value ? Number(e.target.value) : ''
+                  minSales: e.target.value ? Number(e.target.value) : undefined
                 }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -289,10 +297,18 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
                   ...prev,
                   officialStoresOnly: e.target.checked
                 }))}
-                className="form-checkbox h-4 w-4 text-blue-600"
+                className="form-checkbox h-4 w-4  text-blue-600"
               />
               <span className="ml-2 text-gray-700">Solo tiendas oficiales</span>
             </label>
+          </div>
+          <div className="mt-4">
+            <button
+              onClick={handleApplyFilters}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Aplicar filtros
+            </button>
           </div>
         </div>
       )}
