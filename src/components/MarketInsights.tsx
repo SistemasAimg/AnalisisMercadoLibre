@@ -4,7 +4,7 @@ import { Line } from 'react-chartjs-2';
 import { 
   BarChart3, DollarSign, TrendingUp, Users, AlertCircle, Store, 
   ChevronDown, ChevronUp, ExternalLink, Filter, X, Activity,
-  ShoppingCart, Search, Award, Target
+  ShoppingCart, Search, Award, Target, Truck
 } from 'lucide-react';
 import { useQuery } from 'react-query';
 import { getMarketAnalysis, searchProducts, Product, FilterOptions } from '../services/api';
