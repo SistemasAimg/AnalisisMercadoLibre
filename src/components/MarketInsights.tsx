@@ -29,12 +29,14 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     minSales: undefined
   });
 
+  // Buscamos productos de acuerdo a la query y filtros
   const { data: searchResults, isLoading: isSearching, refetch: refetchSearch } = useQuery(
     ['searchProducts', searchQuery, filters],
     () => searchProducts(searchQuery, filters),
     {
       enabled: !!searchQuery && isUserAuthenticated,
       onSuccess: (data) => {
+        // Si encontramos un producto de la tienda oficial Garmin, lo seleccionamos primero
         const garminProduct = data.results.find(p => p.seller.id === 225076335);
         if (garminProduct && !selectedProduct) {
           setSelectedProduct(garminProduct);
@@ -45,6 +47,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     }
   );
 
+  // Obtenemos el análisis de mercado de ese producto seleccionado
   const { 
     data: analysis, 
     isLoading: isAnalyzing,
@@ -58,6 +61,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     }
   );
 
+  // Chequeamos si el usuario está autenticado, caso contrario mostramos alerta
   useEffect(() => {
     const authStatus = isAuthenticated();
     setIsUserAuthenticated(authStatus);
@@ -103,6 +107,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     return `${sign}${value.toFixed(1)}%`;
   };
 
+  // Cuando no hay búsqueda establecida
   if (!searchQuery) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -126,11 +131,12 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
+  // Si el usuario no está autenticado, mostrar alerta de autenticación
   if (showAuthAlert) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
         <div className="flex items-center mb-6">
-          <BarChart3 size={24} className="text-blue-600 mr-2" />
+          <BarChart3 size={24} className="text-blue-600 mr=2" />
           <h2 className="text-xl font-bold text-gray-800">
             Análisis de mercado: {searchQuery}
           </h2>
@@ -157,6 +163,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
+  // Loading
   if (isLoading) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -174,6 +181,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
+  // Error en el análisis o sin datos
   if (error || !analysis) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -199,6 +207,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
+  // Render principal
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -331,6 +340,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
           </div>
         )}
 
+        {/* Tarjetas resumen: precio promedio, tiendas oficiales, health score, oportunidad */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-gray-50 p-4 rounded-lg">
             <div className="flex items-center mb-2">
@@ -380,7 +390,9 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
           </div>
         </div>
 
+        {/* Sección de análisis de Precios y Keywords */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          {/* Análisis de Precios */}
           <div className="bg-gray-50 p-4 rounded-lg">
             <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
               <TrendingUp size={20} className="text-blue-500 mr-2" />
@@ -412,6 +424,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             </div>
           </div>
 
+          {/* Análisis de Keywords */}
           <div className="bg-gray-50 p-4 rounded-lg">
             <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
               <Search size={20} className="text-green-500 mr-2" />
@@ -445,7 +458,41 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
           </div>
         </div>
 
+        {/* Nueva sección: Análisis de Visitas */}
+        <div className="bg-gray-50 p-4 rounded-lg mb-6">
+          <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
+            <TrendingUp size={20} className="text-orange-500 mr-2" />
+            Análisis de Visitas
+          </h3>
+          {analysis.visitHistory && analysis.visitHistory.length > 0 ? (
+            <Line
+              data={{
+                labels: analysis.visitHistory.map(item => item.date),
+                datasets: [{
+                  label: 'Visitas',
+                  data: analysis.visitHistory.map(item => item.total),
+                  borderColor: 'rgb(75, 192, 192)',
+                  backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                  tension: 0.3
+                }]
+              }}
+              options={{
+                responsive: true,
+                plugins: {
+                  legend: {
+                    position: 'top'
+                  }
+                }
+              }}
+            />
+          ) : (
+            <p className="text-gray-600">No hay datos de visitas disponibles.</p>
+          )}
+        </div>
+
+        {/* Análisis de Competencia y Métricas de rendimiento */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          {/* Competencia */}
           <div className="bg-gray-50 p-4 rounded-lg">
             <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
               <Users size={20} className="text-purple-500 mr-2" />
@@ -481,6 +528,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             </div>
           </div>
 
+          {/* Métricas de Rendimiento */}
           <div className="bg-gray-50 p-4 rounded-lg">
             <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
               <ShoppingCart size={20} className="text-orange-500 mr-2" />
@@ -527,6 +575,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
           </div>
         </div>
 
+        {/* Oportunidad de mercado */}
         <div className="bg-gray-50 p-4 rounded-lg">
           <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
             <Award size={20} className="text-yellow-500 mr-2" />

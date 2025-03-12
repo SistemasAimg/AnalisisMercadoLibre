@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { getAccessToken } from './auth';
 
-// Single axios instance for all API calls through our proxy
+// Single axios instance para todas las llamadas a la API mediante proxy
 const api = axios.create({
   baseURL: '/api/proxy'
 });
@@ -9,7 +9,7 @@ const api = axios.create({
 // ID de la tienda oficial de Garmin Argentina
 const GARMIN_STORE_ID = 225076335;
 
-// Add auth token when available
+// Interceptor para agregar token de autenticación
 api.interceptors.request.use(async (config) => {
   const token = await getAccessToken();
   if (token) {
@@ -136,6 +136,9 @@ export interface MarketAnalysis {
   }>;
   garminProducts: Product[];
   isGarminProduct: boolean;
+
+  // Nuevo campo para la mediana
+  medianPrice: number;
   
   // Nuevos campos de análisis avanzado
   priceAnalysis: PriceAnalysis;
@@ -153,6 +156,22 @@ export interface MarketAnalysis {
   };
 }
 
+// ---------------------------------------------------------
+// Función auxiliar para calcular mediana de una lista
+// ---------------------------------------------------------
+function getMedian(numbers: number[]): number {
+  if (!numbers.length) return 0;
+  const sorted = [...numbers].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+  return sorted[mid];
+}
+
+// ---------------------------------------------------------
+// searchProducts
+// ---------------------------------------------------------
 export const searchProducts = async (
   query: string,
   filters?: FilterOptions,
@@ -160,6 +179,7 @@ export const searchProducts = async (
   offset = 0
 ): Promise<SearchResponse> => {
   try {
+    // Endpoint de búsqueda genérica (usando proxy)
     const response = await api.get('/search', {
       params: {
         q: query,
@@ -172,9 +192,10 @@ export const searchProducts = async (
       }
     });
     
+    // Filtro adicional de ventas mínimas
     if (filters?.minSales && filters.minSales > 0) {
       response.data.results = response.data.results.filter(
-        product => product.sold_quantity >= filters.minSales!
+        (product: Product) => product.sold_quantity >= filters.minSales!
       );
     }
     
@@ -185,11 +206,16 @@ export const searchProducts = async (
   }
 };
 
+// ---------------------------------------------------------
+// Ejemplo de obtención de visitas de un producto o palabra
+// ---------------------------------------------------------
 export const getProductVisits = async (
   productName: string,
   officialStoresOnly: boolean = false
 ): Promise<VisitData[]> => {
   try {
+    // Aquí podrías usar un endpoint oficial de visitas de ML
+    // o uno interno '/product-visits'. Ajusta según tu proxy.
     const response = await api.get('/product-visits', {
       params: {
         q: productName,
@@ -203,6 +229,9 @@ export const getProductVisits = async (
   }
 };
 
+// ---------------------------------------------------------
+// Análisis básico de palabras clave
+// ---------------------------------------------------------
 const analyzeKeywords = (products: Product[]): string[] => {
   const keywords = new Map<string, number>();
   
@@ -223,6 +252,9 @@ const analyzeKeywords = (products: Product[]): string[] => {
     .map(entry => entry[0]);
 };
 
+// ---------------------------------------------------------
+// Cálculo sencillo de elasticidad precio
+// ---------------------------------------------------------
 const calculatePriceElasticity = (
   priceChanges: number[],
   salesChanges: number[]
@@ -235,6 +267,9 @@ const calculatePriceElasticity = (
   return avgPriceChange !== 0 ? (avgSalesChange / avgPriceChange) : 0;
 };
 
+// ---------------------------------------------------------
+// Cálculo de healthScore
+// ---------------------------------------------------------
 const calculateHealthScore = (product: Product, marketAverage: number): number => {
   let score = 100;
   
@@ -250,17 +285,24 @@ const calculateHealthScore = (product: Product, marketAverage: number): number =
   
   // Ajuste por antigüedad de la publicación
   const listingAge = Date.now() - new Date(product.date_created).getTime();
-  if (listingAge > 180 * 24 * 60 * 60 * 1000) score -= 10; // Más de 6 meses
+  if (listingAge > 180 * 24 * 60 * 60 * 1000) {
+    // Más de 6 meses
+    score -= 10;
+  }
   
   return Math.max(0, Math.min(100, score));
 };
 
+// ---------------------------------------------------------
+// getMarketAnalysis
+// ---------------------------------------------------------
 export const getMarketAnalysis = async (
   product: Product,
   dateRange: { start: Date; end: Date },
   filters?: FilterOptions
 ): Promise<MarketAnalysis> => {
   try {
+    // 1. Buscar productos (todos y filtrados)
     const allProducts = await searchProducts(product.title);
     const filteredProducts = filters ? await searchProducts(product.title, filters) : allProducts;
     
@@ -268,34 +310,39 @@ export const getMarketAnalysis = async (
       throw new Error('No hay suficientes datos para realizar un análisis');
     }
 
+    // Identificar si es producto Garmin
     const garminProducts = allProducts.results.filter(
       p => p.seller.id === GARMIN_STORE_ID
     );
     const isGarminProduct = product.seller.id === GARMIN_STORE_ID;
 
+    // 2. Obtener historia de visitas
     const visitHistory = await getProductVisits(
       product.title,
       filters?.officialStoresOnly
     );
 
+    // 3. Cálculo de precios
     const prices = filteredProducts.results.map(item => item.price);
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
     const averagePrice = prices.reduce((sum, price) => sum + price, 0) / prices.length;
+    const medianPrice = getMedian(prices);
 
+    // Comparar precio Garmin con el promedio
     let garminPrice = 0;
     let priceTrend = 0;
-    
     if (garminProducts.length > 0) {
       garminPrice = garminProducts[0].price;
       priceTrend = ((garminPrice - averagePrice) / averagePrice) * 100;
     }
 
+    // 4. Cálculo de ventas y tendencias
     const totalSales = filteredProducts.results.reduce((sum, item) => sum + item.sold_quantity, 0);
     const avgSales = totalSales / filteredProducts.results.length;
     const salesTrend = ((product.sold_quantity - avgSales) / avgSales) * 100;
 
-    // Análisis de competidores
+    // 5. Análisis de competidores
     const competitors = new Map<number, Product[]>();
     allProducts.results.forEach(p => {
       if (!competitors.has(p.seller.id)) {
@@ -328,17 +375,19 @@ export const getMarketAnalysis = async (
       .sort((a, b) => b.marketShare - a.marketShare)
       .slice(0, 10);
 
-    // Análisis de palabras clave
+    // 6. Análisis de palabras clave
     const topKeywords = analyzeKeywords(allProducts.results);
-    const keywordScore = isGarminProduct ? 
-      topKeywords.filter(k => product.title.toLowerCase().includes(k)).length * 10 : 0;
+    const keywordScore = isGarminProduct 
+      ? topKeywords.filter(k => product.title.toLowerCase().includes(k)).length * 10 
+      : 0;
 
-    // Métricas de rendimiento
+    // 7. Métricas de rendimiento
     const estimatedViews = visitHistory.reduce((sum, v) => sum + v.total, 0);
     const conversionRate = estimatedViews > 0 ? (product.sold_quantity / estimatedViews) * 100 : 0;
     const healthScore = calculateHealthScore(product, averagePrice);
 
     const uniqueSellers = new Set(allProducts.results.map(item => item.seller.id)).size;
+    // Tiendas oficiales (en este ejemplo, interpretado como la de Garmin, pero podría adaptarse si hubiera más)
     const uniqueOfficialStores = new Set(
       allProducts.results
         .filter(p => p.seller.id === GARMIN_STORE_ID)
@@ -346,22 +395,22 @@ export const getMarketAnalysis = async (
     ).size;
     const officialStorePercentage = Math.round((uniqueOfficialStores / uniqueSellers) * 100);
 
+    // Nivel de competencia
     let competitionLevel: 'low' | 'medium' | 'high' = 'low';
     if (uniqueSellers > 50) competitionLevel = 'high';
     else if (uniqueSellers > 20) competitionLevel = 'medium';
 
+    // Distribución de ventas
     const salesRanges = [
       { min: 0, max: 10, count: 0 },
       { min: 11, max: 50, count: 0 },
       { min: 51, max: 100, count: 0 },
       { min: 101, max: Infinity, count: 0 }
     ];
-
     filteredProducts.results.forEach(item => {
       const range = salesRanges.find(r => item.sold_quantity >= r.min && item.sold_quantity <= r.max);
       if (range) range.count++;
     });
-
     const salesDistribution = salesRanges.map((range, index) => ({
       range: index === salesRanges.length - 1 
         ? `${range.min}+ ventas`
@@ -369,8 +418,8 @@ export const getMarketAnalysis = async (
       percentage: Math.round((range.count / filteredProducts.results.length) * 100)
     }));
 
+    // 8. Recomendaciones
     const recommendations = [];
-    
     if (isGarminProduct && garminPrice > 0) {
       if (priceTrend > 10) {
         recommendations.push(`El precio de Garmin (${formatPrice(garminPrice)}) está por encima del promedio del mercado (${formatPrice(averagePrice)}). Considera ajustarlo para mejorar la competitividad.`);
@@ -398,17 +447,14 @@ export const getMarketAnalysis = async (
         }
       }
 
-      // Recomendaciones basadas en el análisis de palabras clave
       if (keywordScore < 50) {
         recommendations.push('Optimiza el título con palabras clave más relevantes del mercado.');
       }
 
-      // Recomendaciones basadas en la tasa de conversión
       if (conversionRate < 2) {
         recommendations.push('La tasa de conversión es baja. Considera mejorar la calidad de las imágenes y descripción.');
       }
 
-      // Recomendaciones basadas en el health score
       if (healthScore < 70) {
         recommendations.push('El health score del producto es bajo. Revisa el precio y el stock disponible.');
       }
@@ -416,7 +462,7 @@ export const getMarketAnalysis = async (
       recommendations.push('Este producto no está disponible en la tienda oficial de Garmin Argentina.');
     }
 
-    // Calcular oportunidad de mercado
+    // 9. Oportunidad de mercado
     const marketOpportunity = {
       score: Math.min(100, Math.max(0, 
         (healthScore * 0.3) + 
@@ -433,8 +479,10 @@ export const getMarketAnalysis = async (
       potentialRevenue: averagePrice * avgSales * 12 // Estimación anual
     };
 
+    // 10. Construir respuesta final
     return {
       averagePrice,
+      medianPrice,  // Nuevo campo con la mediana
       priceRange: { min: minPrice, max: maxPrice },
       totalSellers: uniqueSellers,
       totalListings: filteredProducts.results.length,
@@ -450,26 +498,31 @@ export const getMarketAnalysis = async (
       salesDistribution,
       garminProducts,
       isGarminProduct,
-      
-      // Nuevos análisis
+
+      // Análisis avanzado
       priceAnalysis: {
         current: product.price,
-        historical: visitHistory.map((v, i) => ({
-          date: v.date,
-          price: product.price * (1 + (Math.random() * 0.1 - 0.05)), // Simulación
-          change: i > 0 ? Math.random() * 10 - 5 : 0
-        })),
+        // Ajustamos la simulación del histórico: incrementamos o disminuimos un poco el precio en cada punto
+        historical: visitHistory.map((v, i) => {
+          const percentChange = (i - (visitHistory.length - 1)) * 0.015; // ejemplo
+          const changedPrice = product.price * (1 + percentChange);
+          return {
+            date: v.date,
+            price: parseFloat(changedPrice.toFixed(2)),
+            change: i === 0 ? 0 : parseFloat((percentChange * 100).toFixed(2))
+          };
+        }),
         trend: priceTrend > 0 ? 'up' : priceTrend < 0 ? 'down' : 'stable',
         priceElasticity: calculatePriceElasticity(
-          [0, priceTrend], // Simulación de cambios de precio
-          [0, salesTrend]  // Simulación de cambios en ventas
+          [0, priceTrend],
+          [0, salesTrend]
         )
       },
       competitorAnalysis,
       performanceMetrics: {
         conversionRate,
         sellThroughRate: (product.sold_quantity / (product.sold_quantity + product.available_quantity)) * 100,
-        questionRate: Math.random() * 100, // Simulado - requiere datos reales de preguntas
+        questionRate: Math.random() * 100, // Simulado - requiere datos reales
         healthScore,
         visibility: keywordScore
       },
