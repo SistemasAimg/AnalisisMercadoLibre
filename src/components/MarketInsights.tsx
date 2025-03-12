@@ -35,7 +35,11 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     {
       enabled: !!searchQuery && isUserAuthenticated,
       onSuccess: (data) => {
-        if (data.results.length > 0 && !selectedProduct) {
+        // Intentar seleccionar un producto de Garmin primero
+        const garminProduct = data.results.find(p => p.official_store_id === 2159);
+        if (garminProduct && !selectedProduct) {
+          setSelectedProduct(garminProduct);
+        } else if (data.results.length > 0 && !selectedProduct) {
           setSelectedProduct(data.results[0]);
         }
       }
@@ -215,6 +219,21 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
         </button>
       </div>
 
+      {!analysis.isGarminProduct && (
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+          <div className="flex items-start">
+            <AlertCircle size={24} className="text-yellow-500 mr-3 mt-0.5" />
+            <div>
+              <h3 className="text-lg font-medium text-yellow-800">Producto no disponible en Garmin Argentina</h3>
+              <p className="text-yellow-700 mt-1">
+                Este producto no está disponible en la tienda oficial de Garmin Argentina.
+                Las métricas mostradas son informativas del mercado general.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showFilters && (
         <div className="bg-gray-50 p-4 rounded-lg mb-6">
           <div className="flex items-center justify-between mb-4">
@@ -297,7 +316,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
                   ...prev,
                   officialStoresOnly: e.target.checked
                 }))}
-                className="form-checkbox h-4 w-4  text-blue-600"
+                className="form-checkbox h-4 w-4 text-blue-600"
               />
               <span className="ml-2 text-gray-700">Solo tiendas oficiales</span>
             </label>
@@ -320,9 +339,11 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             <h3 className="ml-2 text-gray-700 font-medium">Precio promedio</h3>
           </div>
           <p className="text-2xl font-bold text-gray-900">{formatPrice(analysis.averagePrice)}</p>
-          <p className={`text-sm ${getTrendClass(analysis.priceTrend)}`}>
-            {formatPercent(analysis.priceTrend)} vs. promedio del mercado
-          </p>
+          {analysis.isGarminProduct && (
+            <p className={`text-sm ${getTrendClass(analysis.priceTrend)}`}>
+              {formatPercent(analysis.priceTrend)} vs. promedio del mercado
+            </p>
+          )}
         </div>
         <div className="bg-gray-50 p-4 rounded-lg">
           <div className="flex items-center mb-2">
@@ -413,14 +434,20 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
 
         <div className="bg-gray-50 p-4 rounded-lg">
           <h3 className="text-lg font-medium text-gray-800 mb-4">Recomendaciones</h3>
-          <ul className="space-y-2">
-            {analysis.recommendations.map((recommendation, index) => (
-              <li key={index} className="flex items-start">
-                <span className="inline-block w-2 h-2 bg-blue-500 rounded-full mt-2 mr-2"></span>
-                <span className="text-gray-700">{recommendation}</span>
-              </li>
-            ))}
-          </ul>
+          {analysis.recommendations.length > 0 ? (
+            <ul className="space-y-2">
+              {analysis.recommendations.map((recommendation, index) => (
+                <li key={index} className="flex items-start">
+                  <span className="inline-block w-2 h-2 bg-blue-500 rounded-full mt-2 mr-2"></span>
+                  <span className="text-gray-700">{recommendation}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-600">
+              No hay recomendaciones disponibles para este producto.
+            </p>
+          )}
         </div>
       </div>
     </div>

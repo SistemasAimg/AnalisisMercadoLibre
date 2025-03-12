@@ -6,6 +6,9 @@ const api = axios.create({
   baseURL: '/api/proxy'
 });
 
+// ID de la tienda oficial de Garmin Argentina
+const GARMIN_STORE_ID = 2159; // Asegúrate de que este sea el ID correcto de la tienda de Garmin
+
 // Add auth token when available
 api.interceptors.request.use(async (config) => {
   const token = await getAccessToken();
@@ -91,7 +94,8 @@ export interface MarketAnalysis {
     range: string;
     percentage: number;
   }>;
-  selectedProductPrice: number; // Nuevo campo para mostrar el precio del producto seleccionado
+  garminProducts: Product[]; // Productos de Garmin para este término de búsqueda
+  isGarminProduct: boolean; // Indica si el producto seleccionado es de Garmin
 }
 
 export const searchProducts = async (
@@ -161,6 +165,12 @@ export const getMarketAnalysis = async (
       throw new Error('No hay suficientes datos para realizar un análisis');
     }
 
+    // Identificar productos de Garmin
+    const garminProducts = allProducts.results.filter(
+      p => p.official_store_id === GARMIN_STORE_ID
+    );
+    const isGarminProduct = garminProducts.some(p => p.id === product.id);
+
     // Obtener visitas totales del producto
     const visitHistory = await getProductVisits(
       product.title,
@@ -173,8 +183,14 @@ export const getMarketAnalysis = async (
     const maxPrice = Math.max(...prices);
     const averagePrice = prices.reduce((sum, price) => sum + price, 0) / prices.length;
 
-    // Calcular tendencias de precios
-    const priceTrend = ((product.price - averagePrice) / averagePrice) * 100;
+    // Si es un producto de Garmin, usar el precio de Garmin para las comparaciones
+    let garminPrice = 0;
+    let priceTrend = 0;
+    
+    if (garminProducts.length > 0) {
+      garminPrice = garminProducts[0].price;
+      priceTrend = ((garminPrice - averagePrice) / averagePrice) * 100;
+    }
 
     // Calcular tendencia de ventas basada en datos reales
     const totalSales = filteredProducts.results.reduce((sum, item) => sum + item.sold_quantity, 0);
@@ -215,33 +231,37 @@ export const getMarketAnalysis = async (
       percentage: Math.round((range.count / filteredProducts.results.length) * 100)
     }));
 
-    // Generar recomendaciones basadas en datos reales
+    // Generar recomendaciones solo si es un producto de Garmin
     const recommendations = [];
     
-    if (priceTrend > 10) {
-      recommendations.push(`Tu precio (${formatPrice(product.price)}) está por encima del promedio del mercado (${formatPrice(averagePrice)}). Considera ajustarlo para mejorar la competitividad.`);
-    } else if (priceTrend < -10) {
-      recommendations.push(`Tu precio (${formatPrice(product.price)}) está por debajo del promedio del mercado (${formatPrice(averagePrice)}). Podrías aumentarlo sin perder competitividad.`);
-    }
-
-    if (officialStorePercentage > 70) {
-      recommendations.push('Alta presencia de tiendas oficiales. Destaca tu valor agregado y servicio al cliente.');
-    }
-
-    if (competitionLevel === 'high') {
-      recommendations.push('Mercado muy competitivo. Enfócate en diferenciación y servicio post-venta.');
-    } else if (competitionLevel === 'low') {
-      recommendations.push('Baja competencia. Oportunidad para establecer presencia dominante.');
-    }
-
-    if (visitHistory.length > 0) {
-      const lastVisits = visitHistory[visitHistory.length - 1].total;
-      const firstVisits = visitHistory[0].total;
-      if (lastVisits > firstVisits) {
-        recommendations.push('Las visitas están aumentando. Buen momento para optimizar la conversión.');
-      } else if (lastVisits < firstVisits) {
-        recommendations.push('Las visitas están disminuyendo. Considera mejorar la visibilidad del producto.');
+    if (isGarminProduct && garminPrice > 0) {
+      if (priceTrend > 10) {
+        recommendations.push(`El precio de Garmin (${formatPrice(garminPrice)}) está por encima del promedio del mercado (${formatPrice(averagePrice)}). Considera ajustarlo para mejorar la competitividad.`);
+      } else if (priceTrend < -10) {
+        recommendations.push(`El precio de Garmin (${formatPrice(garminPrice)}) está por debajo del promedio del mercado (${formatPrice(averagePrice)}). Podrías aumentarlo sin perder competitividad.`);
       }
+
+      if (officialStorePercentage > 70) {
+        recommendations.push('Alta presencia de tiendas oficiales. Destaca el respaldo y garantía oficial de Garmin.');
+      }
+
+      if (competitionLevel === 'high') {
+        recommendations.push('Mercado muy competitivo. Enfatiza las ventajas de comprar directamente con Garmin.');
+      } else if (competitionLevel === 'low') {
+        recommendations.push('Baja competencia. Oportunidad para establecer precios más competitivos.');
+      }
+
+      if (visitHistory.length > 0) {
+        const lastVisits = visitHistory[visitHistory.length - 1].total;
+        const firstVisits = visitHistory[0].total;
+        if (lastVisits > firstVisits) {
+          recommendations.push('Las visitas están aumentando. Buen momento para destacar características exclusivas.');
+        } else if (lastVisits < firstVisits) {
+          recommendations.push('Las visitas están disminuyendo. Considera realizar promociones o mejorar la visibilidad.');
+        }
+      }
+    } else {
+      recommendations.push('Este producto no está disponible en la tienda oficial de Garmin Argentina.');
     }
 
     return {
@@ -259,7 +279,8 @@ export const getMarketAnalysis = async (
       activeSellers: uniqueSellers,
       newSellers: Math.floor(uniqueSellers * 0.15),
       salesDistribution,
-      selectedProductPrice: product.price
+      garminProducts,
+      isGarminProduct
     };
   } catch (error) {
     console.error('Error al realizar análisis de mercado:', error);
