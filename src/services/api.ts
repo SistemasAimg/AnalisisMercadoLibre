@@ -27,6 +27,8 @@ export interface Product {
   thumbnail: string;
   condition: string;
   permalink: string;
+  date_created: string;
+  last_updated: string;
   seller: {
     id: number;
     nickname: string;

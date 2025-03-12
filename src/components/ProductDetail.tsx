@@ -1,6 +1,8 @@
 import React from 'react';
 import { Product } from '../services/api';
-import { ArrowLeft, Star, Truck, ShieldCheck, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Star, Truck, ShieldCheck, BarChart3, Calendar, RefreshCw } from 'lucide-react';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 interface ProductDetailProps {
   product: Product | null;
@@ -15,6 +17,10 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ product, onBack }) => {
       style: 'currency',
       currency: currency,
     }).format(price);
+  };
+
+  const formatDate = (dateString: string) => {
+    return format(new Date(dateString), "d 'de' MMMM, yyyy", { locale: es });
   };
 
   return (
@@ -76,6 +82,21 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ product, onBack }) => {
             <div className="flex items-center text-gray-600">
               <BarChart3 size={18} className="mr-2" />
               <span>Stock disponible - {product.available_quantity} unidades</span>
+            </div>
+          </div>
+
+          {/* Nueva sección con información de la publicación */}
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+            <h3 className="text-lg font-medium text-gray-800 mb-3">Información de la publicación</h3>
+            <div className="space-y-2">
+              <div className="flex items-center text-gray-600">
+                <Calendar size={18} className="mr-2" />
+                <span>Publicado: {product.date_created ? formatDate(product.date_created) : 'No disponible'}</span>
+              </div>
+              <div className="flex items-center text-gray-600">
+                <RefreshCw size={18} className="mr-2" />
+                <span>Última actualización: {product.last_updated ? formatDate(product.last_updated) : 'No disponible'}</span>
+              </div>
             </div>
           </div>
 
