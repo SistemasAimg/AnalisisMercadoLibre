@@ -91,6 +91,7 @@ export interface MarketAnalysis {
     range: string;
     percentage: number;
   }>;
+  selectedProductPrice: number; // Nuevo campo para mostrar el precio del producto seleccionado
 }
 
 export const searchProducts = async (
@@ -150,10 +151,13 @@ export const getMarketAnalysis = async (
   filters?: FilterOptions
 ): Promise<MarketAnalysis> => {
   try {
-    // Buscar productos similares con filtros
-    const similarProducts = await searchProducts(product.title, filters);
+    // Buscar todos los productos similares sin filtros para métricas generales
+    const allProducts = await searchProducts(product.title);
     
-    if (!similarProducts.results.length) {
+    // Buscar productos similares con filtros para análisis filtrado
+    const filteredProducts = filters ? await searchProducts(product.title, filters) : allProducts;
+    
+    if (!allProducts.results.length) {
       throw new Error('No hay suficientes datos para realizar un análisis');
     }
 
@@ -163,8 +167,8 @@ export const getMarketAnalysis = async (
       filters?.officialStoresOnly
     );
 
-    // Calcular métricas reales
-    const prices = similarProducts.results.map(item => item.price);
+    // Calcular métricas reales usando productos filtrados
+    const prices = filteredProducts.results.map(item => item.price);
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
     const averagePrice = prices.reduce((sum, price) => sum + price, 0) / prices.length;
@@ -173,14 +177,18 @@ export const getMarketAnalysis = async (
     const priceTrend = ((product.price - averagePrice) / averagePrice) * 100;
 
     // Calcular tendencia de ventas basada en datos reales
-    const totalSales = similarProducts.results.reduce((sum, item) => sum + item.sold_quantity, 0);
-    const avgSales = totalSales / similarProducts.results.length;
+    const totalSales = filteredProducts.results.reduce((sum, item) => sum + item.sold_quantity, 0);
+    const avgSales = totalSales / filteredProducts.results.length;
     const salesTrend = ((product.sold_quantity - avgSales) / avgSales) * 100;
 
-    // Contar vendedores únicos y tiendas oficiales
-    const uniqueSellers = new Set(similarProducts.results.map(item => item.seller.id)).size;
-    const officialStores = similarProducts.results.filter(p => p.official_store_id != null).length;
-    const officialStorePercentage = Math.round((officialStores / similarProducts.results.length) * 100);
+    // Contar vendedores únicos y tiendas oficiales usando TODOS los productos
+    const uniqueSellers = new Set(allProducts.results.map(item => item.seller.id)).size;
+    const uniqueOfficialStores = new Set(
+      allProducts.results
+        .filter(p => p.official_store_id != null)
+        .map(p => p.official_store_id)
+    ).size;
+    const officialStorePercentage = Math.round((uniqueOfficialStores / uniqueSellers) * 100);
 
     // Determinar nivel de competencia
     let competitionLevel: 'low' | 'medium' | 'high' = 'low';
@@ -195,7 +203,7 @@ export const getMarketAnalysis = async (
       { min: 101, max: Infinity, count: 0 }
     ];
 
-    similarProducts.results.forEach(item => {
+    filteredProducts.results.forEach(item => {
       const range = salesRanges.find(r => item.sold_quantity >= r.min && item.sold_quantity <= r.max);
       if (range) range.count++;
     });
@@ -204,16 +212,16 @@ export const getMarketAnalysis = async (
       range: index === salesRanges.length - 1 
         ? `${range.min}+ ventas`
         : `${range.min}-${range.max} ventas`,
-      percentage: Math.round((range.count / similarProducts.results.length) * 100)
+      percentage: Math.round((range.count / filteredProducts.results.length) * 100)
     }));
 
     // Generar recomendaciones basadas en datos reales
     const recommendations = [];
     
     if (priceTrend > 10) {
-      recommendations.push('Tu precio está por encima del promedio del mercado. Considera ajustarlo para mejorar la competitividad.');
+      recommendations.push(`Tu precio (${formatPrice(product.price)}) está por encima del promedio del mercado (${formatPrice(averagePrice)}). Considera ajustarlo para mejorar la competitividad.`);
     } else if (priceTrend < -10) {
-      recommendations.push('Tu precio está por debajo del promedio. Podrías aumentarlo sin perder competitividad.');
+      recommendations.push(`Tu precio (${formatPrice(product.price)}) está por debajo del promedio del mercado (${formatPrice(averagePrice)}). Podrías aumentarlo sin perder competitividad.`);
     }
 
     if (officialStorePercentage > 70) {
@@ -240,20 +248,29 @@ export const getMarketAnalysis = async (
       averagePrice,
       priceRange: { min: minPrice, max: maxPrice },
       totalSellers: uniqueSellers,
-      totalListings: similarProducts.results.length,
+      totalListings: filteredProducts.results.length,
       visitHistory,
       salesTrend,
       priceTrend,
       competitionLevel,
       recommendations,
-      officialStores,
+      officialStores: uniqueOfficialStores,
       officialStorePercentage,
       activeSellers: uniqueSellers,
       newSellers: Math.floor(uniqueSellers * 0.15),
-      salesDistribution
+      salesDistribution,
+      selectedProductPrice: product.price
     };
   } catch (error) {
     console.error('Error al realizar análisis de mercado:', error);
     throw error;
   }
 };
+
+// Función auxiliar para formatear precios
+function formatPrice(price: number): string {
+  return new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS'
+  }).format(price);
+}
