@@ -7,7 +7,7 @@ const api = axios.create({
 });
 
 // ID de la tienda oficial de Garmin Argentina
-const GARMIN_STORE_ID = 225076335; // Asegúrate de que este sea el ID correcto de la tienda de Garmin
+const GARMIN_STORE_ID = 225076335; // ID correcto de la tienda oficial de Garmin
 
 // Add auth token when available
 api.interceptors.request.use(async (config) => {
@@ -165,11 +165,11 @@ export const getMarketAnalysis = async (
       throw new Error('No hay suficientes datos para realizar un análisis');
     }
 
-    // Identificar productos de Garmin
+    // Identificar productos de Garmin usando el seller.id
     const garminProducts = allProducts.results.filter(
-      p => p.official_store_id === GARMIN_STORE_ID
+      p => p.seller.id === GARMIN_STORE_ID
     );
-    const isGarminProduct = garminProducts.some(p => p.id === product.id);
+    const isGarminProduct = product.seller.id === GARMIN_STORE_ID;
 
     // Obtener visitas totales del producto
     const visitHistory = await getProductVisits(
@@ -197,12 +197,12 @@ export const getMarketAnalysis = async (
     const avgSales = totalSales / filteredProducts.results.length;
     const salesTrend = ((product.sold_quantity - avgSales) / avgSales) * 100;
 
-    // Contar vendedores únicos y tiendas oficiales usando TODOS los productos
+    // Contar vendedores únicos y tiendas oficiales
     const uniqueSellers = new Set(allProducts.results.map(item => item.seller.id)).size;
     const uniqueOfficialStores = new Set(
       allProducts.results
-        .filter(p => p.official_store_id != null)
-        .map(p => p.official_store_id)
+        .filter(p => p.seller.id === GARMIN_STORE_ID)
+        .map(p => p.seller.id)
     ).size;
     const officialStorePercentage = Math.round((uniqueOfficialStores / uniqueSellers) * 100);
 

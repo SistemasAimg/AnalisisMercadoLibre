@@ -36,7 +36,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
       enabled: !!searchQuery && isUserAuthenticated,
       onSuccess: (data) => {
         // Intentar seleccionar un producto de Garmin primero
-        const garminProduct = data.results.find(p => p.official_store_id === 225076335);
+        const garminProduct = data.results.find(p => p.official_store_id === 1218);
         if (garminProduct && !selectedProduct) {
           setSelectedProduct(garminProduct);
         } else if (data.results.length > 0 && !selectedProduct) {
