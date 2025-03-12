@@ -34,6 +34,7 @@ export interface Product {
   shipping: {
     free_shipping: boolean;
   };
+  official_store_id?: number | null;
 }
 
 export interface SearchResponse {
@@ -163,7 +164,7 @@ export const getMarketAnalysis = async (
     // Filtrar productos por tiendas oficiales si es necesario
     let productsToAnalyze = similarProducts.results;
     if (officialStoresOnly) {
-      productsToAnalyze = productsToAnalyze.filter(p => p.seller.id.toString().startsWith('999'));
+      productsToAnalyze = productsToAnalyze.filter(p => p.official_store_id != null);
     }
 
     // Obtener visitas del producto
@@ -183,9 +184,9 @@ export const getMarketAnalysis = async (
     const avgSales = totalSales / productsToAnalyze.length;
     const salesTrend = ((product.sold_quantity - avgSales) / avgSales) * 100;
 
-    // Contar vendedores únicos
+    // Contar vendedores únicos y tiendas oficiales
     const uniqueSellers = new Set(productsToAnalyze.map(item => item.seller.id)).size;
-    const officialStores = productsToAnalyze.filter(p => p.seller.id.toString().startsWith('999')).length;
+    const officialStores = productsToAnalyze.filter(p => p.official_store_id != null).length;
     const officialStorePercentage = Math.round((officialStores / productsToAnalyze.length) * 100);
 
     // Determinar nivel de competencia
@@ -213,7 +214,7 @@ export const getMarketAnalysis = async (
       percentage: Math.round((range.count / productsToAnalyze.length) * 100)
     }));
 
-    // Generar recomendaciones
+    // Generar recomendaciones basadas en datos reales
     const recommendations = [];
     
     if (priceTrend > 10) {
