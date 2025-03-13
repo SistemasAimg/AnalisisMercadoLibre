@@ -31,8 +31,26 @@ export interface KeywordAnalysis {
 export class MarketAnalyzer {
   // Análisis de precios usando regresión lineal y TensorFlow
   async analyzePrices(products: Product[]): Promise<PriceAnalysisResult> {
-    const prices = products.map(p => p.price);
-    const sales = products.map(p => p.sold_quantity);
+    if (!Array.isArray(products) || products.length === 0) {
+      return {
+        predictedPrice: 0,
+        confidence: 0,
+        priceRange: { min: 0, max: 0 },
+        elasticity: 0
+      };
+    }
+
+    const prices = products.map(p => p.price).filter(p => !isNaN(p) && p > 0);
+    const sales = products.map(p => p.sold_quantity).filter(s => !isNaN(s) && s >= 0);
+
+    if (prices.length === 0 || sales.length === 0) {
+      return {
+        predictedPrice: 0,
+        confidence: 0,
+        priceRange: { min: 0, max: 0 },
+        elasticity: 0
+      };
+    }
 
     // Calcular estadísticas básicas
     const meanPrice = ss.mean(prices);
@@ -40,50 +58,72 @@ export class MarketAnalyzer {
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
 
-    // Crear modelo de regresión para predecir precio óptimo
-    const model = tf.sequential({
-      layers: [
-        tf.layers.dense({ units: 1, inputShape: [1] })
-      ]
-    });
+    try {
+      // Crear modelo de regresión para predecir precio óptimo
+      const model = tf.sequential({
+        layers: [
+          tf.layers.dense({ units: 1, inputShape: [1] })
+        ]
+      });
 
-    model.compile({ optimizer: 'sgd', loss: 'meanSquaredError' });
+      model.compile({ optimizer: 'sgd', loss: 'meanSquaredError' });
 
-    // Preparar datos para entrenamiento
-    const xs = tf.tensor2d(sales, [sales.length, 1]);
-    const ys = tf.tensor2d(prices, [prices.length, 1]);
+      // Preparar datos para entrenamiento
+      const xs = tf.tensor2d(sales, [sales.length, 1]);
+      const ys = tf.tensor2d(prices, [prices.length, 1]);
 
-    // Entrenar modelo
-    await model.fit(xs, ys, { epochs: 100 });
+      // Entrenar modelo
+      await model.fit(xs, ys, { epochs: 50 });
 
-    // Calcular predicción y elasticidad
-    const predictedPrice = model.predict(tf.tensor2d([ss.mean(sales)], [1, 1])) as tf.Tensor;
-    const elasticity = this.calculatePriceElasticity(prices, sales);
+      // Calcular predicción y elasticidad
+      const predictedPrice = model.predict(tf.tensor2d([ss.mean(sales)], [1, 1])) as tf.Tensor;
+      const elasticity = this.calculatePriceElasticity(prices, sales);
 
-    return {
-      predictedPrice: (await predictedPrice.data())[0],
-      confidence: 0.95 - stdPrice / meanPrice, // Ajustar según variabilidad
-      priceRange: {
-        min: minPrice,
-        max: maxPrice
-      },
-      elasticity
-    };
+      const prediction = (await predictedPrice.data())[0];
+
+      return {
+        predictedPrice: isNaN(prediction) ? meanPrice : prediction,
+        confidence: 0.95 - (stdPrice / meanPrice),
+        priceRange: { min: minPrice, max: maxPrice },
+        elasticity
+      };
+    } catch (error) {
+      console.error('Error en análisis de precios:', error);
+      return {
+        predictedPrice: meanPrice,
+        confidence: 0.5,
+        priceRange: { min: minPrice, max: maxPrice },
+        elasticity: 0
+      };
+    }
   }
 
   // Segmentación de mercado usando algoritmo simple de clustering
   segmentMarket(products: Product[], k: number = 3): MarketSegment[] {
+    if (!Array.isArray(products) || products.length === 0) {
+      return Array(k).fill(null).map((_, i) => ({
+        id: i,
+        name: this.getSegmentName(i),
+        products: [],
+        centerPrice: 0,
+        averageSales: 0
+      }));
+    }
+
+    // Asegurarse de que k no sea mayor que el número de productos
+    k = Math.min(k, products.length);
+
     // Implementación simple de k-means
     const features = products.map(p => ({
-      price: p.price,
-      sales: p.sold_quantity,
-      stock: p.available_quantity
+      price: p.price || 0,
+      sales: p.sold_quantity || 0,
+      stock: p.available_quantity || 0
     }));
 
     // Normalizar datos
-    const maxPrice = Math.max(...features.map(f => f.price));
-    const maxSales = Math.max(...features.map(f => f.sales));
-    const maxStock = Math.max(...features.map(f => f.stock));
+    const maxPrice = Math.max(...features.map(f => f.price)) || 1;
+    const maxSales = Math.max(...features.map(f => f.sales)) || 1;
+    const maxStock = Math.max(...features.map(f => f.stock)) || 1;
 
     const normalizedFeatures = features.map(f => ({
       price: f.price / maxPrice,
@@ -91,11 +131,11 @@ export class MarketAnalyzer {
       stock: f.stock / maxStock
     }));
 
-    // Inicializar centroides aleatoriamente
-    let centroids = Array(k).fill(null).map(() => ({
-      price: Math.random(),
-      sales: Math.random(),
-      stock: Math.random()
+    // Inicializar centroides usando productos existentes
+    let centroids = Array(k).fill(null).map((_, i) => ({
+      price: normalizedFeatures[Math.floor(i * normalizedFeatures.length / k)].price,
+      sales: normalizedFeatures[Math.floor(i * normalizedFeatures.length / k)].sales,
+      stock: normalizedFeatures[Math.floor(i * normalizedFeatures.length / k)].stock
     }));
 
     // Asignar productos a clusters
@@ -130,8 +170,10 @@ export class MarketAnalyzer {
 
     // Calcular métricas por segmento
     segments.forEach(segment => {
-      segment.centerPrice = ss.mean(segment.products.map(p => p.price));
-      segment.averageSales = ss.mean(segment.products.map(p => p.sold_quantity));
+      if (segment.products.length > 0) {
+        segment.centerPrice = ss.mean(segment.products.map(p => p.price));
+        segment.averageSales = ss.mean(segment.products.map(p => p.sold_quantity));
+      }
     });
 
     return segments;
@@ -143,40 +185,84 @@ export class MarketAnalyzer {
     growthRate: number;
     seasonality: boolean;
   } {
-    const visits = visitHistory.map(v => v.total);
+    if (!Array.isArray(visitHistory) || visitHistory.length === 0) {
+      return {
+        trend: 'stable',
+        growthRate: 0,
+        seasonality: false
+      };
+    }
+
+    const visits = visitHistory.map(v => v.total || 0);
     const dates = visitHistory.map(v => new Date(v.date).getTime());
 
-    // Calcular tendencia usando regresión lineal simple
-    const n = dates.length;
-    const sumX = dates.reduce((a, b) => a + b, 0);
-    const sumY = visits.reduce((a, b) => a + b, 0);
-    const sumXY = dates.reduce((sum, x, i) => sum + x * visits[i], 0);
-    const sumXX = dates.reduce((sum, x) => sum + x * x, 0);
+    if (visits.length < 2) {
+      return {
+        trend: 'stable',
+        growthRate: 0,
+        seasonality: false
+      };
+    }
 
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-    const growthRate = (slope * n) / sumY * 100;
+    try {
+      // Calcular tendencia usando regresión lineal simple
+      const n = dates.length;
+      const sumX = dates.reduce((a, b) => a + b, 0);
+      const sumY = visits.reduce((a, b) => a + b, 0);
+      const sumXY = dates.reduce((sum, x, i) => sum + x * visits[i], 0);
+      const sumXX = dates.reduce((sum, x) => sum + x * x, 0);
 
-    // Detectar estacionalidad
-    const seasonality = this.detectSeasonality(visits);
+      const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+      const growthRate = sumY === 0 ? 0 : (slope * n) / sumY * 100;
 
-    return {
-      trend: growthRate > 5 ? 'up' : growthRate < -5 ? 'down' : 'stable',
-      growthRate,
-      seasonality
-    };
+      // Detectar estacionalidad
+      const seasonality = this.detectSeasonality(visits);
+
+      return {
+        trend: growthRate > 5 ? 'up' : growthRate < -5 ? 'down' : 'stable',
+        growthRate: isNaN(growthRate) ? 0 : growthRate,
+        seasonality
+      };
+    } catch (error) {
+      console.error('Error en análisis de tendencias:', error);
+      return {
+        trend: 'stable',
+        growthRate: 0,
+        seasonality: false
+      };
+    }
   }
 
-  // Análisis de palabras clave simple
+  // Análisis de palabras clave
   analyzeKeywords(products: Product[]): KeywordAnalysis {
-    const allText = products.map(p => p.title.toLowerCase()).join(' ');
-    const words = allText.split(/\s+/);
+    if (!Array.isArray(products) || products.length === 0) {
+      return {
+        relevantTerms: [],
+        frequency: {},
+        sentiment: 0
+      };
+    }
+
+    const allText = products
+      .map(p => p.title || '')
+      .filter(title => title.length > 0)
+      .join(' ')
+      .toLowerCase();
+
+    const words = allText.split(/\s+/).filter(word => word.length > 3);
     
+    if (words.length === 0) {
+      return {
+        relevantTerms: [],
+        frequency: {},
+        sentiment: 0
+      };
+    }
+
     // Calcular frecuencia de términos
     const frequency: { [key: string]: number } = {};
     words.forEach(word => {
-      if (word.length > 3) { // Ignorar palabras muy cortas
-        frequency[word] = (frequency[word] || 0) + 1;
-      }
+      frequency[word] = (frequency[word] || 0) + 1;
     });
 
     // Identificar términos más relevantes
@@ -198,49 +284,61 @@ export class MarketAnalyzer {
     return {
       relevantTerms,
       frequency,
-      sentiment: sentiment / words.length
+      sentiment: words.length === 0 ? 0 : sentiment / words.length
     };
   }
 
   // Métodos auxiliares
   private calculatePriceElasticity(prices: number[], sales: number[]): number {
-    const avgPrice = ss.mean(prices);
-    const avgSales = ss.mean(sales);
-    
-    // Calcular cambio porcentual
-    const priceChanges = prices.map((p, i) => 
-      i > 0 ? (p - prices[i-1]) / prices[i-1] : 0
-    ).slice(1);
-    
-    const salesChanges = sales.map((s, i) => 
-      i > 0 ? (s - sales[i-1]) / sales[i-1] : 0
-    ).slice(1);
+    if (prices.length < 2 || sales.length < 2) return 0;
 
-    // Elasticidad promedio
-    const elasticities = priceChanges.map((p, i) => 
-      p !== 0 ? salesChanges[i] / p : 0
-    );
+    try {
+      // Calcular cambio porcentual
+      const priceChanges = prices.map((p, i) => 
+        i > 0 ? (p - prices[i-1]) / prices[i-1] : 0
+      ).slice(1);
+      
+      const salesChanges = sales.map((s, i) => 
+        i > 0 ? (s - sales[i-1]) / sales[i-1] : 0
+      ).slice(1);
 
-    return ss.mean(elasticities.filter(e => !isNaN(e) && isFinite(e)));
+      // Elasticidad promedio
+      const elasticities = priceChanges.map((p, i) => 
+        p !== 0 ? salesChanges[i] / p : 0
+      );
+
+      const validElasticities = elasticities.filter(e => !isNaN(e) && isFinite(e));
+      return validElasticities.length > 0 ? ss.mean(validElasticities) : 0;
+    } catch (error) {
+      console.error('Error al calcular elasticidad:', error);
+      return 0;
+    }
   }
 
   private detectSeasonality(data: number[]): boolean {
-    if (data.length < 4) return false;
+    if (!Array.isArray(data) || data.length < 4) return false;
 
-    // Calcular autocorrelación simple
-    const mean = ss.mean(data);
-    const variance = ss.variance(data);
-    
-    const lag = Math.floor(data.length / 4);
-    let autocorr = 0;
-    
-    for (let i = 0; i < data.length - lag; i++) {
-      autocorr += (data[i] - mean) * (data[i + lag] - mean);
+    try {
+      // Calcular autocorrelación simple
+      const mean = ss.mean(data);
+      const variance = ss.variance(data);
+      
+      if (variance === 0) return false;
+      
+      const lag = Math.floor(data.length / 4);
+      let autocorr = 0;
+      
+      for (let i = 0; i < data.length - lag; i++) {
+        autocorr += (data[i] - mean) * (data[i + lag] - mean);
+      }
+      
+      autocorr /= (data.length - lag) * variance;
+      
+      return Math.abs(autocorr) > 0.7;
+    } catch (error) {
+      console.error('Error al detectar estacionalidad:', error);
+      return false;
     }
-    
-    autocorr /= (data.length - lag) * variance;
-    
-    return Math.abs(autocorr) > 0.7;
   }
 
   private getSegmentName(id: number): string {
