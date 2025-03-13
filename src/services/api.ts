@@ -175,20 +175,35 @@ const getSellerProducts = async (sellerId: number): Promise<Product[]> => {
       }
     });
 
+    // Verificar que response.data y results existan
+    if (!response.data?.results) {
+      console.error('Respuesta inválida al buscar productos del vendedor');
+      return [];
+    }
+
     const itemIds = response.data.results;
-    if (!itemIds.length) return [];
+    if (!Array.isArray(itemIds) || itemIds.length === 0) {
+      return [];
+    }
 
     // Obtener detalles de productos en lotes de 20
     const products: Product[] = [];
     for (let i = 0; i < itemIds.length; i += 20) {
       const batch = itemIds.slice(i, i + 20);
-      const itemsResponse = await api.get('/items', {
-        params: {
-          ids: batch.join(','),
-          attributes: 'id,title,price,currency_id,available_quantity,sold_quantity,thumbnail,condition,permalink,date_created,last_updated,catalog_product_id,seller,shipping,official_store_id'
+      try {
+        const itemsResponse = await api.get('/items', {
+          params: {
+            ids: batch.join(','),
+            attributes: 'id,title,price,currency_id,available_quantity,sold_quantity,thumbnail,condition,permalink,date_created,last_updated,catalog_product_id,seller,shipping,official_store_id'
+          }
+        });
+        
+        if (Array.isArray(itemsResponse.data)) {
+          products.push(...itemsResponse.data.map(item => item.body));
         }
-      });
-      products.push(...itemsResponse.data);
+      } catch (error) {
+        console.error(`Error al obtener detalles del lote de productos:`, error);
+      }
     }
 
     return products;
@@ -211,13 +226,18 @@ export const getProductVisits = async (
       }
     });
 
+    // Verificar que response.data y results existan
+    if (!response.data?.results) {
+      return [];
+    }
+
     return response.data.results.map((visit: any) => ({
       date: visit.date,
-      total: visit.total,
-      source: visit.visits_detail?.map((detail: any) => ({
-        company: detail.company,
-        total: detail.total
-      }))
+      total: visit.total || 0,
+      source: Array.isArray(visit.visits_detail) ? visit.visits_detail.map((detail: any) => ({
+        company: detail.company || 'unknown',
+        total: detail.total || 0
+      })) : undefined
     }));
   } catch (error) {
     console.error('Error al obtener visitas del producto:', error);
@@ -233,7 +253,7 @@ const getTrendingSearches = async (categoryId?: string): Promise<Trend[]> => {
       '/trends/MLA';
     
     const response = await api.get(endpoint);
-    return response.data || [];
+    return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
     console.error('Error al obtener tendencias:', error);
     return [];
@@ -247,9 +267,12 @@ const getPriceToWin = async (productId: string): Promise<{
 } | null> => {
   try {
     const response = await api.get(`/items/${productId}/price_to_win`);
+    if (!response.data) return null;
+    
     return {
-      price: response.data.price,
-      advantages: response.data.competitive_advantages || []
+      price: response.data.price || 0,
+      advantages: Array.isArray(response.data.competitive_advantages) ? 
+        response.data.competitive_advantages : []
     };
   } catch (error) {
     console.error('Error al obtener precio competitivo:', error);
@@ -259,6 +282,8 @@ const getPriceToWin = async (productId: string): Promise<{
 
 // Calcular mediana de precios
 const calculateMedianPrice = (prices: number[]): number => {
+  if (!Array.isArray(prices) || prices.length === 0) return 0;
+  
   const sorted = [...prices].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   
@@ -271,9 +296,13 @@ const calculateMedianPrice = (prices: number[]): number => {
 
 // Analizar keywords
 const analyzeKeywords = (products: Product[]): string[] => {
+  if (!Array.isArray(products) || products.length === 0) return [];
+  
   const keywords = new Map<string, number>();
   
   products.forEach(product => {
+    if (!product.title) return;
+    
     const words = product.title
       .toLowerCase()
       .split(' ')
@@ -292,6 +321,8 @@ const analyzeKeywords = (products: Product[]): string[] => {
 
 // Calcular health score
 const calculateHealthScore = (product: Product, marketAverage: number): number => {
+  if (!product || typeof marketAverage !== 'number') return 0;
+  
   let score = 100;
   
   // Penalización por precio muy alejado del promedio
@@ -332,17 +363,26 @@ export const searchProducts = async (
         official_store_only: filters?.officialStoresOnly
       }
     });
+
+    // Verificar y sanitizar la respuesta
+    const results = Array.isArray(response.data?.results) ? response.data.results : [];
+    const paging = response.data?.paging || { total: 0, offset: 0, limit: 20 };
     
-    if (filters?.minSales && filters.minSales > 0) {
-      response.data.results = response.data.results.filter(
-        product => product.sold_quantity >= filters.minSales!
-      );
-    }
-    
-    return response.data;
+    // Filtrar por ventas mínimas si es necesario
+    const filteredResults = filters?.minSales && filters.minSales > 0 ?
+      results.filter(product => product.sold_quantity >= filters.minSales) :
+      results;
+
+    return {
+      results: filteredResults,
+      paging
+    };
   } catch (error) {
     console.error('Error en búsqueda de productos:', error);
-    throw error;
+    return {
+      results: [],
+      paging: { total: 0, offset: 0, limit: 20 }
+    };
   }
 };
 
@@ -358,7 +398,7 @@ export const getMarketAnalysis = async (
       await searchProducts(product.title, filters) : 
       allProducts;
 
-    if (!allProducts.results.length) {
+    if (!Array.isArray(filteredProducts.results) || filteredProducts.results.length === 0) {
       throw new Error('No hay suficientes datos para realizar un análisis');
     }
 
