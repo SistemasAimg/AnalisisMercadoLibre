@@ -1,10 +1,5 @@
 import * as tf from '@tensorflow/tfjs';
-import { KMeans } from 'ml-kmeans';
-import { Matrix } from 'ml-matrix';
-import { SimpleLinearRegression } from 'ml-regression';
-import * as natural from 'natural';
 import * as ss from 'simple-statistics';
-import regression from 'regression';
 import { Product, VisitData, CompetitorAnalysis } from './api';
 
 // Interfaces para los modelos de análisis
@@ -34,14 +29,6 @@ export interface KeywordAnalysis {
 
 // Clase principal para análisis de mercado
 export class MarketAnalyzer {
-  private tokenizer: natural.WordTokenizer;
-  private sentiment: natural.SentimentAnalyzer;
-
-  constructor() {
-    this.tokenizer = new natural.WordTokenizer();
-    this.sentiment = new natural.SentimentAnalyzer('Spanish', natural.PorterStemmer, 'afinn');
-  }
-
   // Análisis de precios usando regresión lineal y TensorFlow
   async analyzePrices(products: Product[]): Promise<PriceAnalysisResult> {
     const prices = products.map(p => p.price);
@@ -84,22 +71,49 @@ export class MarketAnalyzer {
     };
   }
 
-  // Segmentación de mercado usando K-means
+  // Segmentación de mercado usando algoritmo simple de clustering
   segmentMarket(products: Product[], k: number = 3): MarketSegment[] {
-    // Preparar datos para clustering
-    const features = products.map(p => [
-      p.price,
-      p.sold_quantity,
-      p.available_quantity
-    ]);
+    // Implementación simple de k-means
+    const features = products.map(p => ({
+      price: p.price,
+      sales: p.sold_quantity,
+      stock: p.available_quantity
+    }));
 
-    const matrix = new Matrix(features);
+    // Normalizar datos
+    const maxPrice = Math.max(...features.map(f => f.price));
+    const maxSales = Math.max(...features.map(f => f.sales));
+    const maxStock = Math.max(...features.map(f => f.stock));
 
-    // Ejecutar K-means
-    const kmeans = new KMeans(k);
-    const result = kmeans.predict(matrix);
+    const normalizedFeatures = features.map(f => ({
+      price: f.price / maxPrice,
+      sales: f.sales / maxSales,
+      stock: f.stock / maxStock
+    }));
 
-    // Organizar resultados por segmento
+    // Inicializar centroides aleatoriamente
+    let centroids = Array(k).fill(null).map(() => ({
+      price: Math.random(),
+      sales: Math.random(),
+      stock: Math.random()
+    }));
+
+    // Asignar productos a clusters
+    const assignments = normalizedFeatures.map(feature => {
+      const distances = centroids.map((centroid, i) => ({
+        index: i,
+        distance: Math.sqrt(
+          Math.pow(feature.price - centroid.price, 2) +
+          Math.pow(feature.sales - centroid.sales, 2) +
+          Math.pow(feature.stock - centroid.stock, 2)
+        )
+      }));
+      return distances.reduce((min, curr) => 
+        curr.distance < min.distance ? curr : min
+      ).index;
+    });
+
+    // Crear segmentos
     const segments: MarketSegment[] = Array(k).fill(null).map((_, i) => ({
       id: i,
       name: this.getSegmentName(i),
@@ -110,7 +124,7 @@ export class MarketAnalyzer {
 
     // Asignar productos a segmentos
     products.forEach((product, index) => {
-      const segmentId = result[index];
+      const segmentId = assignments[index];
       segments[segmentId].products.push(product);
     });
 
@@ -132,52 +146,37 @@ export class MarketAnalyzer {
     const visits = visitHistory.map(v => v.total);
     const dates = visitHistory.map(v => new Date(v.date).getTime());
 
-    // Calcular tendencia usando regresión lineal
-    const data = dates.map((date, i) => [date, visits[i]]);
-    const result = regression.linear(data);
-    const slope = result.equation[0];
+    // Calcular tendencia usando regresión lineal simple
+    const n = dates.length;
+    const sumX = dates.reduce((a, b) => a + b, 0);
+    const sumY = visits.reduce((a, b) => a + b, 0);
+    const sumXY = dates.reduce((sum, x, i) => sum + x * visits[i], 0);
+    const sumXX = dates.reduce((sum, x) => sum + x * x, 0);
+
+    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    const growthRate = (slope * n) / sumY * 100;
 
     // Detectar estacionalidad
     const seasonality = this.detectSeasonality(visits);
 
     return {
-      trend: slope > 0.05 ? 'up' : slope < -0.05 ? 'down' : 'stable',
-      growthRate: slope * 100,
+      trend: growthRate > 5 ? 'up' : growthRate < -5 ? 'down' : 'stable',
+      growthRate,
       seasonality
     };
   }
 
-  // Análisis de competencia usando múltiples métricas
-  analyzeCompetition(competitors: CompetitorAnalysis[]): {
-    topCompetitors: CompetitorAnalysis[];
-    marketConcentration: number;
-    competitivePressure: 'high' | 'medium' | 'low';
-  } {
-    // Ordenar competidores por participación de mercado
-    const sortedCompetitors = [...competitors].sort((a, b) => b.marketShare - a.marketShare);
-
-    // Calcular índice HHI de concentración de mercado
-    const hhi = competitors.reduce((sum, comp) => sum + Math.pow(comp.marketShare, 2), 0);
-
-    // Determinar presión competitiva
-    const competitivePressure = hhi > 2500 ? 'low' : hhi > 1500 ? 'medium' : 'high';
-
-    return {
-      topCompetitors: sortedCompetitors.slice(0, 5),
-      marketConcentration: hhi,
-      competitivePressure
-    };
-  }
-
-  // Análisis de palabras clave y sentimiento
+  // Análisis de palabras clave simple
   analyzeKeywords(products: Product[]): KeywordAnalysis {
-    const allText = products.map(p => p.title).join(' ');
-    const tokens = this.tokenizer.tokenize(allText.toLowerCase());
+    const allText = products.map(p => p.title.toLowerCase()).join(' ');
+    const words = allText.split(/\s+/);
     
     // Calcular frecuencia de términos
     const frequency: { [key: string]: number } = {};
-    tokens.forEach(token => {
-      frequency[token] = (frequency[token] || 0) + 1;
+    words.forEach(word => {
+      if (word.length > 3) { // Ignorar palabras muy cortas
+        frequency[word] = (frequency[word] || 0) + 1;
+      }
     });
 
     // Identificar términos más relevantes
@@ -186,13 +185,20 @@ export class MarketAnalyzer {
       .slice(0, 10)
       .map(([term]) => term);
 
-    // Análisis de sentimiento
-    const sentimentScore = this.sentiment.getSentiment(tokens);
+    // Análisis de sentimiento simple
+    const positiveWords = new Set(['nuevo', 'original', 'garantía', 'oferta', 'premium']);
+    const negativeWords = new Set(['usado', 'roto', 'defecto', 'viejo', 'dañado']);
+    
+    let sentiment = 0;
+    words.forEach(word => {
+      if (positiveWords.has(word)) sentiment++;
+      if (negativeWords.has(word)) sentiment--;
+    });
 
     return {
       relevantTerms,
       frequency,
-      sentiment: sentimentScore
+      sentiment: sentiment / words.length
     };
   }
 
@@ -200,19 +206,41 @@ export class MarketAnalyzer {
   private calculatePriceElasticity(prices: number[], sales: number[]): number {
     const avgPrice = ss.mean(prices);
     const avgSales = ss.mean(sales);
-    const regression = new SimpleLinearRegression(prices, sales);
-    return (regression.slope * avgPrice) / avgSales;
+    
+    // Calcular cambio porcentual
+    const priceChanges = prices.map((p, i) => 
+      i > 0 ? (p - prices[i-1]) / prices[i-1] : 0
+    ).slice(1);
+    
+    const salesChanges = sales.map((s, i) => 
+      i > 0 ? (s - sales[i-1]) / sales[i-1] : 0
+    ).slice(1);
+
+    // Elasticidad promedio
+    const elasticities = priceChanges.map((p, i) => 
+      p !== 0 ? salesChanges[i] / p : 0
+    );
+
+    return ss.mean(elasticities.filter(e => !isNaN(e) && isFinite(e)));
   }
 
   private detectSeasonality(data: number[]): boolean {
-    // Implementación simple de detección de estacionalidad
-    // usando autocorrelación
+    if (data.length < 4) return false;
+
+    // Calcular autocorrelación simple
+    const mean = ss.mean(data);
+    const variance = ss.variance(data);
+    
     const lag = Math.floor(data.length / 4);
-    const correlation = ss.sampleCorrelation(
-      data.slice(0, -lag),
-      data.slice(lag)
-    );
-    return Math.abs(correlation) > 0.7;
+    let autocorr = 0;
+    
+    for (let i = 0; i < data.length - lag; i++) {
+      autocorr += (data[i] - mean) * (data[i + lag] - mean);
+    }
+    
+    autocorr /= (data.length - lag) * variance;
+    
+    return Math.abs(autocorr) > 0.7;
   }
 
   private getSegmentName(id: number): string {
