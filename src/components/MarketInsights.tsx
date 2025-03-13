@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
 import { Line } from 'react-chartjs-2';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { 
   BarChart3, DollarSign, TrendingUp, Users, AlertCircle, Store, 
-  ChevronDown, ChevronUp, ExternalLink, Filter, X, Activity,
-  ShoppingCart, Search, Award, Target, Truck
+  Filter, X, Activity, ShoppingCart, Search, Award, Target, Truck,
+  Brain, TrendingDown, Zap, LineChart
 } from 'lucide-react';
 import { useQuery } from 'react-query';
 import { getMarketAnalysis, searchProducts, Product, FilterOptions } from '../services/api';
 import { isAuthenticated } from '../services/auth';
+import { marketAnalyzer } from '../services/analysis';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -29,14 +32,12 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     minSales: undefined
   });
 
-  // Buscamos productos de acuerdo a la query y filtros
-  const { data: searchResults, isLoading: isSearching, refetch: refetchSearch } = useQuery(
+  const { data: searchResults, isLoading: isSearching } = useQuery(
     ['searchProducts', searchQuery, filters],
     () => searchProducts(searchQuery, filters),
     {
       enabled: !!searchQuery && isUserAuthenticated,
       onSuccess: (data) => {
-        // Si encontramos un producto de la tienda oficial Garmin, lo seleccionamos primero
         const garminProduct = data.results.find(p => p.seller.id === 225076335);
         if (garminProduct && !selectedProduct) {
           setSelectedProduct(garminProduct);
@@ -47,11 +48,9 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     }
   );
 
-  // Obtenemos el análisis de mercado de ese producto seleccionado
   const { 
     data: analysis, 
     isLoading: isAnalyzing,
-    refetch: refetchAnalysis,
     error 
   } = useQuery(
     ['marketAnalysis', selectedProduct?.id, dateRange, filters],
@@ -61,53 +60,61 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     }
   );
 
-  // Chequeamos si el usuario está autenticado, caso contrario mostramos alerta
+  // Análisis avanzado usando ML
+  const [mlAnalysis, setMlAnalysis] = useState<{
+    priceAnalysis: any;
+    segments: any[];
+    trends: any;
+    keywords: any;
+  } | null>(null);
+
   useEffect(() => {
+    const performAdvancedAnalysis = async () => {
+      if (searchResults?.results && analysis) {
+        const products = searchResults.results;
+        
+        // Análisis de precios con ML
+        const priceAnalysis = await marketAnalyzer.analyzePrices(products);
+        
+        // Segmentación de mercado
+        const segments = marketAnalyzer.segmentMarket(products);
+        
+        // Análisis de tendencias
+        const trends = marketAnalyzer.analyzeTrends(analysis.visitHistory);
+        
+        // Análisis de keywords
+        const keywords = marketAnalyzer.analyzeKeywords(products);
+
+        setMlAnalysis({
+          priceAnalysis,
+          segments,
+          trends,
+          keywords
+        });
+      }
+    };
+
+    performAdvancedAnalysis();
+  }, [searchResults, analysis]);
+
+  React.useEffect(() => {
     const authStatus = isAuthenticated();
     setIsUserAuthenticated(authStatus);
     setShowAuthAlert(!authStatus);
   }, []);
 
-  const handleApplyFilters = () => {
-    refetchSearch();
-    if (selectedProduct) {
-      refetchAnalysis();
-    }
-  };
-
-  const handleResetFilters = () => {
-    setFilters({
-      minPrice: undefined,
-      maxPrice: undefined,
-      condition: 'all',
-      officialStoresOnly: false,
-      minSales: undefined
-    });
-    refetchSearch();
-    if (selectedProduct) {
-      refetchAnalysis();
-    }
-  };
-
-  const isLoading = isSearching || isAnalyzing;
-
-  const formatPrice = (price: number) => {
+  const formatCurrency = (amount: number | null): string => {
+    if (amount === null) return 'No disponible';
     return new Intl.NumberFormat('es-AR', {
       style: 'currency',
-      currency: 'ARS',
-    }).format(price);
+      currency: 'ARS'
+    }).format(amount);
   };
 
-  const getTrendClass = (value: number) => {
-    return value >= 0 ? 'text-green-600' : 'text-red-600';
+  const formatDate = (dateString: string): string => {
+    return format(new Date(dateString), "d 'de' MMMM", { locale: es });
   };
 
-  const formatPercent = (value: number) => {
-    const sign = value >= 0 ? '+' : '';
-    return `${sign}${value.toFixed(1)}%`;
-  };
-
-  // Cuando no hay búsqueda establecida
   if (!searchQuery) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -131,12 +138,11 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
-  // Si el usuario no está autenticado, mostrar alerta de autenticación
   if (showAuthAlert) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
         <div className="flex items-center mb-6">
-          <BarChart3 size={24} className="text-blue-600 mr=2" />
+          <BarChart3 size={24} className="text-blue-600 mr-2" />
           <h2 className="text-xl font-bold text-gray-800">
             Análisis de mercado: {searchQuery}
           </h2>
@@ -163,8 +169,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
-  // Loading
-  if (isLoading) {
+  if (isSearching || isAnalyzing) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
         <div className="flex items-center mb-6">
@@ -181,8 +186,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
-  // Error en el análisis o sin datos
-  if (error || !analysis) {
+  if (error || !analysis || !mlAnalysis) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
         <div className="flex items-center mb-6">
@@ -207,7 +211,6 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
     );
   }
 
-  // Render principal
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -247,7 +250,15 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-gray-800">Filtros de análisis</h3>
               <button
-                onClick={handleResetFilters}
+                onClick={() => {
+                  setFilters({
+                    minPrice: undefined,
+                    maxPrice: undefined,
+                    condition: 'all',
+                    officialStoresOnly: false,
+                    minSales: undefined
+                  });
+                }}
                 className="text-blue-600 hover:text-blue-800 flex items-center"
               >
                 <X size={16} className="mr-1" />
@@ -329,28 +340,60 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
                 <span className="ml-2 text-gray-700">Solo tiendas oficiales</span>
               </label>
             </div>
-            <div className="mt-4">
-              <button
-                onClick={handleApplyFilters}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Aplicar filtros
-              </button>
-            </div>
           </div>
         )}
 
-        {/* Tarjetas resumen: precio promedio, tiendas oficiales, health score, oportunidad */}
+        {/* Análisis de ML */}
+        <div className="bg-blue-50 p-4 rounded-lg mb-6">
+          <h3 className="text-lg font-medium text-blue-800 mb-4 flex items-center">
+            <Brain size={20} className="text-blue-600 mr-2" />
+            Análisis Predictivo
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <h4 className="font-medium text-blue-700 mb-2">Predicción de Precios</h4>
+              <p className="text-blue-600">
+                Precio óptimo sugerido: {formatCurrency(mlAnalysis.priceAnalysis.predictedPrice)}
+              </p>
+              <p className="text-sm text-blue-500">
+                Confianza: {(mlAnalysis.priceAnalysis.confidence * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div>
+              <h4 className="font-medium text-blue-700 mb-2">Tendencia del Mercado</h4>
+              <div className="flex items-center">
+                {mlAnalysis.trends.trend === 'up' ? (
+                  <TrendingUp size={20} className="text-green-500 mr-2" />
+                ) : mlAnalysis.trends.trend === 'down' ? (
+                  <TrendingDown size={20} className="text-red-500 mr-2" />
+                ) : (
+                  <LineChart size={20} className="text-blue-500 mr-2" />
+                )}
+                <span className="text-blue-600">
+                  {mlAnalysis.trends.trend === 'up' ? 'En alza' :
+                   mlAnalysis.trends.trend === 'down' ? 'En baja' : 'Estable'}
+                  {' '}({mlAnalysis.trends.growthRate.toFixed(1)}%)
+                </span>
+              </div>
+              {mlAnalysis.trends.seasonality && (
+                <p className="text-sm text-blue-500 mt-1">
+                  Se detectó patrón estacional
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-gray-50 p-4 rounded-lg">
             <div className="flex items-center mb-2">
               <DollarSign size={24} className="text-blue-500" />
               <h3 className="ml-2 text-gray-700 font-medium">Precio promedio</h3>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{formatPrice(analysis.averagePrice)}</p>
+            <p className="text-2xl font-bold text-gray-900">{formatCurrency(analysis.averagePrice)}</p>
             {analysis.isGarminProduct && (
-              <p className={`text-sm ${getTrendClass(analysis.priceTrend)}`}>
-                {formatPercent(analysis.priceTrend)} vs. promedio del mercado
+              <p className={`text-sm ${analysis.priceTrend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {analysis.priceTrend >= 0 ? '+' : ''}{analysis.priceTrend.toFixed(1)}% vs. promedio del mercado
               </p>
             )}
           </div>
@@ -361,49 +404,69 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             </div>
             <p className="text-2xl font-bold text-gray-900">{analysis.officialStores}</p>
             <p className="text-sm text-gray-600">
-              {analysis.officialStorePercentage}% del mercado
+              {analysis.officialStorePercentage.toFixed(1)}% del mercado
             </p>
           </div>
           <div className="bg-gray-50 p-4 rounded-lg">
             <div className="flex items-center mb-2">
               <Activity size={24} className="text-purple-500" />
-              <h3 className="ml-2 text-gray-700 font-medium">Health Score</h3>
+              <h3 className="ml-2 text-gray-700 font-medium">Tasa de Conversión</h3>
             </div>
             <p className="text-2xl font-bold text-gray-900">
-              {analysis.performanceMetrics.healthScore.toFixed(1)}
+              {analysis.performanceMetrics.conversionRate === null ? 
+                'Sin datos' : 
+                `${analysis.performanceMetrics.conversionRate.toFixed(1)}%`}
             </p>
             <p className="text-sm text-gray-600">
-              Índice de rendimiento
+              Ventas / Visitas
             </p>
           </div>
           <div className="bg-gray-50 p-4 rounded-lg">
             <div className="flex items-center mb-2">
               <Target size={24} className="text-red-500" />
-              <h3 className="ml-2 text-gray-700 font-medium">Oportunidad</h3>
+              <h3 className="ml-2 text-gray-700 font-medium">Sell-through Rate</h3>
             </div>
             <p className="text-2xl font-bold text-gray-900">
-              {analysis.marketOpportunity.score.toFixed(1)}%
+              {analysis.performanceMetrics.sellThroughRate.toFixed(1)}%
             </p>
             <p className="text-sm text-gray-600">
-              Score de mercado
+              Vendidos / Total disponible
             </p>
           </div>
         </div>
 
-        {/* Sección de análisis de Precios y Keywords */}
+        {/* Segmentación de Mercado */}
+        <div className="bg-gray-50 p-4 rounded-lg mb-6">
+          <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
+            <Zap size={20} className="text-yellow-500 mr-2" />
+            Segmentación de Mercado
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {mlAnalysis.segments.map((segment) => (
+              <div key={segment.id} className="bg-white p-4 rounded-lg shadow">
+                <h4 className="font-medium text-gray-800 mb-2">{segment.name}</h4>
+                <p className="text-gray-600">Precio promedio: {formatCurrency(segment.centerPrice)}</p>
+                <p className="text-gray-600">Ventas promedio: {segment.averageSales.toFixed(0)}</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {segment.products.length} productos en este segmento
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          {/* Análisis de Precios */}
           <div className="bg-gray-50 p-4 rounded-lg">
             <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
               <TrendingUp size={20} className="text-blue-500 mr-2" />
-              Análisis de Precios
+              Visitas Diarias
             </h3>
             <Line 
               data={{
-                labels: analysis.priceAnalysis.historical.map(item => item.date),
+                labels: analysis.visitHistory.map(item => formatDate(item.date)),
                 datasets: [{
-                  label: 'Precio histórico',
-                  data: analysis.priceAnalysis.historical.map(item => item.price),
+                  label: 'Visitas',
+                  data: analysis.visitHistory.map(item => item.total),
                   borderColor: 'rgb(59, 130, 246)',
                   backgroundColor: 'rgba(59, 130, 246, 0.1)',
                   tension: 0.4
@@ -414,88 +477,29 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
                 plugins: {
                   legend: {
                     position: 'top'
+                  },
+                  tooltip: {
+                    callbacks: {
+                      label: (context) => `Visitas: ${context.raw}`
+                    }
+                  }
+                },
+                scales: {
+                  y: {
+                    beginAtZero: true,
+                    title: {
+                      display: true,
+                      text: 'Número de visitas'
+                    }
                   }
                 }
               }}
             />
-            <div className="mt-4 text-sm text-gray-600">
-              <p>Elasticidad de precio: {analysis.priceAnalysis.priceElasticity?.toFixed(2)}</p>
-              <p>Tendencia: {analysis.priceAnalysis.trend === 'up' ? '↑ Subiendo' : analysis.priceAnalysis.trend === 'down' ? '↓ Bajando' : '→ Estable'}</p>
-            </div>
           </div>
 
-          {/* Análisis de Keywords */}
           <div className="bg-gray-50 p-4 rounded-lg">
             <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
-              <Search size={20} className="text-green-500 mr-2" />
-              Análisis de Keywords
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <h4 className="font-medium text-gray-700 mb-2">Keywords más usadas</h4>
-                <div className="flex flex-wrap gap-2">
-                  {analysis.keywordAnalysis.topKeywords.map((keyword, index) => (
-                    <span key={index} className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
-                      {keyword}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <h4 className="font-medium text-gray-700 mb-2">Keywords sugeridas</h4>
-                <div className="flex flex-wrap gap-2">
-                  {analysis.keywordAnalysis.suggestedKeywords.map((keyword, index) => (
-                    <span key={index} className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-sm">
-                      {keyword}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <p className="text-sm text-gray-600">
-                Score de optimización: {analysis.keywordAnalysis.keywordScore}%
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Nueva sección: Análisis de Visitas */}
-        <div className="bg-gray-50 p-4 rounded-lg mb-6">
-          <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
-            <TrendingUp size={20} className="text-orange-500 mr-2" />
-            Análisis de Visitas
-          </h3>
-          {analysis.visitHistory && analysis.visitHistory.length > 0 ? (
-            <Line
-              data={{
-                labels: analysis.visitHistory.map(item => item.date),
-                datasets: [{
-                  label: 'Visitas',
-                  data: analysis.visitHistory.map(item => item.total),
-                  borderColor: 'rgb(75, 192, 192)',
-                  backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                  tension: 0.3
-                }]
-              }}
-              options={{
-                responsive: true,
-                plugins: {
-                  legend: {
-                    position: 'top'
-                  }
-                }
-              }}
-            />
-          ) : (
-            <p className="text-gray-600">No hay datos de visitas disponibles.</p>
-          )}
-        </div>
-
-        {/* Análisis de Competencia y Métricas de rendimiento */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          {/* Competencia */}
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
-              <Users size={20} className="text-purple-500 mr-2" />
+              <Users size={20} className="text-green-500 mr-2" />
               Análisis de Competencia
             </h3>
             <div className="space-y-4">
@@ -510,7 +514,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
                     </div>
                     <div className="text-right">
                       <p className="font-medium text-gray-800">
-                        {formatPrice(competitor.averagePrice)}
+                        {formatCurrency(competitor.averagePrice)}
                       </p>
                       <p className="text-sm text-gray-600">
                         {competitor.marketShare.toFixed(1)}% share
@@ -527,55 +531,8 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
               ))}
             </div>
           </div>
-
-          {/* Métricas de Rendimiento */}
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
-              <ShoppingCart size={20} className="text-orange-500 mr-2" />
-              Métricas de Rendimiento
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <h4 className="font-medium text-gray-700 mb-2">Tasa de Conversión</h4>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-green-500 h-2 rounded-full"
-                    style={{ width: `${Math.min(100, analysis.performanceMetrics.conversionRate)}%` }}
-                  ></div>
-                </div>
-                <p className="text-sm text-gray-600 mt-1">
-                  {analysis.performanceMetrics.conversionRate.toFixed(1)}%
-                </p>
-              </div>
-              <div>
-                <h4 className="font-medium text-gray-700 mb-2">Sell-through Rate</h4>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-blue-500 h-2 rounded-full"
-                    style={{ width: `${analysis.performanceMetrics.sellThroughRate}%` }}
-                  ></div>
-                </div>
-                <p className="text-sm text-gray-600 mt-1">
-                  {analysis.performanceMetrics.sellThroughRate.toFixed(1)}%
-                </p>
-              </div>
-              <div>
-                <h4 className="font-medium text-gray-700 mb-2">Tasa de Preguntas</h4>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-purple-500 h-2 rounded-full"
-                    style={{ width: `${analysis.performanceMetrics.questionRate}%` }}
-                  ></div>
-                </div>
-                <p className="text-sm text-gray-600 mt-1">
-                  {analysis.performanceMetrics.questionRate.toFixed(1)}%
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
 
-        {/* Oportunidad de mercado */}
         <div className="bg-gray-50 p-4 rounded-lg">
           <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
             <Award size={20} className="text-yellow-500 mr-2" />
@@ -596,9 +553,47 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
             <div>
               <h4 className="font-medium text-gray-700 mb-2">Potencial de Ingresos</h4>
               <p className="text-2xl font-bold text-gray-900">
-                {formatPrice(analysis.marketOpportunity.potentialRevenue)}
+                {formatCurrency(analysis.marketOpportunity.potentialRevenue)}
               </p>
               <p className="text-sm text-gray-600">Estimación anual</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Palabras Clave y SEO */}
+        <div className="bg-gray-50 p-4 rounded-lg mt-6">
+          <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
+            <Search size={20} className="text-purple-500 mr-2" />
+            Análisis de Palabras Clave
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <h4 className="font-medium text-gray-700 mb-2">Términos Relevantes</h4>
+              <div className="flex flex-wrap gap-2">
+                {mlAnalysis.keywords.relevantTerms.map((term: string, index: number) => (
+                  <span
+                    key={index}
+                    className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm"
+                  >
+                    {term}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h4 className="font-medium text-gray-700 mb-2">Análisis de Sentimiento</h4>
+              <div className="flex items-center">
+                <div className={`w-2 h-2 rounded-full mr-2 ${
+                  mlAnalysis.keywords.sentiment > 0 ? 'bg-green-500' :
+                  mlAnalysis.keywords.sentiment < 0 ? 'bg-red-500' :
+                  'bg-yellow-500'
+                }`}></div>
+                <span className="text-gray-600">
+                  {mlAnalysis.keywords.sentiment > 0 ? 'Positivo' :
+                   mlAnalysis.keywords.sentiment < 0 ? 'Negativo' :
+                   'Neutral'}
+                </span>
+              </div>
             </div>
           </div>
         </div>

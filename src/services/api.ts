@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { getAccessToken } from './auth';
 
-// Single axios instance para todas las llamadas a la API mediante proxy
+// Single axios instance for all API calls through our proxy
 const api = axios.create({
   baseURL: '/api/proxy'
 });
@@ -9,7 +9,7 @@ const api = axios.create({
 // ID de la tienda oficial de Garmin Argentina
 const GARMIN_STORE_ID = 225076335;
 
-// Interceptor para agregar token de autenticación
+// Add auth token when available
 api.interceptors.request.use(async (config) => {
   const token = await getAccessToken();
   if (token) {
@@ -40,12 +40,15 @@ export interface Product {
   permalink: string;
   date_created: string;
   last_updated: string;
+  catalog_product_id?: string;
   seller: {
     id: number;
     nickname: string;
   };
   shipping: {
     free_shipping: boolean;
+    logistic_type?: string;
+    tags?: string[];
   };
   official_store_id?: number | null;
 }
@@ -62,6 +65,10 @@ export interface SearchResponse {
 export interface VisitData {
   date: string;
   total: number;
+  source?: {
+    company: string;
+    total: number;
+  }[];
 }
 
 export interface Category {
@@ -71,6 +78,8 @@ export interface Category {
 
 export interface Trend {
   keyword: string;
+  url: string;
+  category_id?: string;
 }
 
 export interface CompetitorAnalysis {
@@ -81,13 +90,18 @@ export interface CompetitorAnalysis {
   marketShare: number;
   shippingStrategy: {
     freeShippingPercentage: number;
-    averageShippingTime?: number;
+    fullService: boolean;
+    sameDay: boolean;
   };
   stockStrategy: {
     averageStock: number;
     restockFrequency?: number;
   };
   keywordStrategy: string[];
+  reputation?: {
+    level: string;
+    rating: number;
+  };
 }
 
 export interface PriceAnalysis {
@@ -98,23 +112,21 @@ export interface PriceAnalysis {
     change: number;
   }[];
   trend: 'up' | 'down' | 'stable';
-  seasonality?: {
-    highSeasonMonths: number[];
-    lowSeasonMonths: number[];
-  };
-  priceElasticity?: number;
+  priceToWin?: number;
+  competitiveAdvantages?: string[];
 }
 
 export interface PerformanceMetrics {
-  conversionRate: number;
+  conversionRate: number | null;
   sellThroughRate: number;
-  questionRate: number;
+  questionRate: number | null;
   healthScore: number;
   visibility: number;
 }
 
 export interface MarketAnalysis {
   averagePrice: number;
+  medianPrice: number;
   priceRange: {
     min: number;
     max: number;
@@ -136,11 +148,7 @@ export interface MarketAnalysis {
   }>;
   garminProducts: Product[];
   isGarminProduct: boolean;
-
-  // Nuevo campo para la mediana
-  medianPrice: number;
   
-  // Nuevos campos de análisis avanzado
   priceAnalysis: PriceAnalysis;
   competitorAnalysis: CompetitorAnalysis[];
   performanceMetrics: PerformanceMetrics;
@@ -148,90 +156,120 @@ export interface MarketAnalysis {
     topKeywords: string[];
     keywordScore: number;
     suggestedKeywords: string[];
+    trendingKeywords?: string[];
   };
   marketOpportunity: {
     score: number;
     factors: string[];
-    potentialRevenue: number;
+    potentialRevenue: number | null;
   };
 }
 
-// ---------------------------------------------------------
-// Función auxiliar para calcular mediana de una lista
-// ---------------------------------------------------------
-function getMedian(numbers: number[]): number {
-  if (!numbers.length) return 0;
-  const sorted = [...numbers].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 === 0) {
-    return (sorted[mid - 1] + sorted[mid]) / 2;
-  }
-  return sorted[mid];
-}
-
-// ---------------------------------------------------------
-// searchProducts
-// ---------------------------------------------------------
-export const searchProducts = async (
-  query: string,
-  filters?: FilterOptions,
-  limit = 50,
-  offset = 0
-): Promise<SearchResponse> => {
+// Obtener todos los productos de un vendedor
+const getSellerProducts = async (sellerId: number): Promise<Product[]> => {
   try {
-    // Endpoint de búsqueda genérica (usando proxy)
-    const response = await api.get('/search', {
+    const response = await api.get(`/users/${sellerId}/items/search`, {
       params: {
-        q: query,
-        limit,
-        offset,
-        min_price: filters?.minPrice,
-        max_price: filters?.maxPrice,
-        condition: filters?.condition !== 'all' ? filters?.condition : undefined,
-        official_store_only: filters?.officialStoresOnly
+        search_type: 'scan',
+        limit: 100
       }
     });
-    
-    // Filtro adicional de ventas mínimas
-    if (filters?.minSales && filters.minSales > 0) {
-      response.data.results = response.data.results.filter(
-        (product: Product) => product.sold_quantity >= filters.minSales!
-      );
+
+    const itemIds = response.data.results;
+    if (!itemIds.length) return [];
+
+    // Obtener detalles de productos en lotes de 20
+    const products: Product[] = [];
+    for (let i = 0; i < itemIds.length; i += 20) {
+      const batch = itemIds.slice(i, i + 20);
+      const itemsResponse = await api.get('/items', {
+        params: {
+          ids: batch.join(','),
+          attributes: 'id,title,price,currency_id,available_quantity,sold_quantity,thumbnail,condition,permalink,date_created,last_updated,catalog_product_id,seller,shipping,official_store_id'
+        }
+      });
+      products.push(...itemsResponse.data);
     }
-    
-    return response.data;
+
+    return products;
   } catch (error) {
-    console.error('Error en búsqueda de productos:', error);
-    throw error;
+    console.error('Error al obtener productos del vendedor:', error);
+    return [];
   }
 };
 
-// ---------------------------------------------------------
-// Ejemplo de obtención de visitas de un producto o palabra
-// ---------------------------------------------------------
+// Obtener visitas de un producto
 export const getProductVisits = async (
-  productName: string,
-  officialStoresOnly: boolean = false
+  productId: string,
+  days: number = 30
 ): Promise<VisitData[]> => {
   try {
-    // Aquí podrías usar un endpoint oficial de visitas de ML
-    // o uno interno '/product-visits'. Ajusta según tu proxy.
-    const response = await api.get('/product-visits', {
+    const response = await api.get(`/items/${productId}/visits/time_window`, {
       params: {
-        q: productName,
-        official_store_only: officialStoresOnly
+        last: days,
+        unit: 'day'
       }
     });
-    return response.data.results || [];
+
+    return response.data.results.map((visit: any) => ({
+      date: visit.date,
+      total: visit.total,
+      source: visit.visits_detail?.map((detail: any) => ({
+        company: detail.company,
+        total: detail.total
+      }))
+    }));
   } catch (error) {
     console.error('Error al obtener visitas del producto:', error);
     return [];
   }
 };
 
-// ---------------------------------------------------------
-// Análisis básico de palabras clave
-// ---------------------------------------------------------
+// Obtener tendencias de búsqueda
+const getTrendingSearches = async (categoryId?: string): Promise<Trend[]> => {
+  try {
+    const endpoint = categoryId ? 
+      `/trends/MLA-${categoryId}` : 
+      '/trends/MLA';
+    
+    const response = await api.get(endpoint);
+    return response.data || [];
+  } catch (error) {
+    console.error('Error al obtener tendencias:', error);
+    return [];
+  }
+};
+
+// Obtener precio competitivo
+const getPriceToWin = async (productId: string): Promise<{
+  price: number;
+  advantages: string[];
+} | null> => {
+  try {
+    const response = await api.get(`/items/${productId}/price_to_win`);
+    return {
+      price: response.data.price,
+      advantages: response.data.competitive_advantages || []
+    };
+  } catch (error) {
+    console.error('Error al obtener precio competitivo:', error);
+    return null;
+  }
+};
+
+// Calcular mediana de precios
+const calculateMedianPrice = (prices: number[]): number => {
+  const sorted = [...prices].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  
+  if (sorted.length % 2 === 0) {
+    return (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+  
+  return sorted[middle];
+};
+
+// Analizar keywords
 const analyzeKeywords = (products: Product[]): string[] => {
   const keywords = new Map<string, number>();
   
@@ -252,24 +290,7 @@ const analyzeKeywords = (products: Product[]): string[] => {
     .map(entry => entry[0]);
 };
 
-// ---------------------------------------------------------
-// Cálculo sencillo de elasticidad precio
-// ---------------------------------------------------------
-const calculatePriceElasticity = (
-  priceChanges: number[],
-  salesChanges: number[]
-): number => {
-  if (priceChanges.length < 2 || salesChanges.length < 2) return 0;
-
-  const avgPriceChange = priceChanges.reduce((a, b) => a + b, 0) / priceChanges.length;
-  const avgSalesChange = salesChanges.reduce((a, b) => a + b, 0) / salesChanges.length;
-  
-  return avgPriceChange !== 0 ? (avgSalesChange / avgPriceChange) : 0;
-};
-
-// ---------------------------------------------------------
-// Cálculo de healthScore
-// ---------------------------------------------------------
+// Calcular health score
 const calculateHealthScore = (product: Product, marketAverage: number): number => {
   let score = 100;
   
@@ -283,66 +304,105 @@ const calculateHealthScore = (product: Product, marketAverage: number): number =
   // Bonificación por envío gratis
   if (product.shipping.free_shipping) score += 10;
   
+  // Bonificación por Mercado Envíos Full
+  if (product.shipping.logistic_type === 'fulfillment') score += 15;
+  
   // Ajuste por antigüedad de la publicación
   const listingAge = Date.now() - new Date(product.date_created).getTime();
-  if (listingAge > 180 * 24 * 60 * 60 * 1000) {
-    // Más de 6 meses
-    score -= 10;
-  }
+  if (listingAge > 180 * 24 * 60 * 60 * 1000) score -= 10; // Más de 6 meses
   
   return Math.max(0, Math.min(100, score));
 };
 
-// ---------------------------------------------------------
-// getMarketAnalysis
-// ---------------------------------------------------------
+export const searchProducts = async (
+  query: string,
+  filters?: FilterOptions,
+  limit = 50,
+  offset = 0
+): Promise<SearchResponse> => {
+  try {
+    const response = await api.get('/search', {
+      params: {
+        q: query,
+        limit,
+        offset,
+        min_price: filters?.minPrice,
+        max_price: filters?.maxPrice,
+        condition: filters?.condition !== 'all' ? filters?.condition : undefined,
+        official_store_only: filters?.officialStoresOnly
+      }
+    });
+    
+    if (filters?.minSales && filters.minSales > 0) {
+      response.data.results = response.data.results.filter(
+        product => product.sold_quantity >= filters.minSales!
+      );
+    }
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error en búsqueda de productos:', error);
+    throw error;
+  }
+};
+
 export const getMarketAnalysis = async (
   product: Product,
   dateRange: { start: Date; end: Date },
   filters?: FilterOptions
 ): Promise<MarketAnalysis> => {
   try {
-    // 1. Buscar productos (todos y filtrados)
+    // Obtener productos similares
     const allProducts = await searchProducts(product.title);
-    const filteredProducts = filters ? await searchProducts(product.title, filters) : allProducts;
-    
+    const filteredProducts = filters ? 
+      await searchProducts(product.title, filters) : 
+      allProducts;
+
     if (!allProducts.results.length) {
       throw new Error('No hay suficientes datos para realizar un análisis');
     }
 
-    // Identificar si es producto Garmin
-    const garminProducts = allProducts.results.filter(
-      p => p.seller.id === GARMIN_STORE_ID
-    );
+    // Obtener productos de Garmin
+    const garminProducts = await getSellerProducts(GARMIN_STORE_ID);
     const isGarminProduct = product.seller.id === GARMIN_STORE_ID;
 
-    // 2. Obtener historia de visitas
-    const visitHistory = await getProductVisits(
-      product.title,
-      filters?.officialStoresOnly
-    );
+    // Obtener productos de tiendas oficiales
+    const officialStoreProducts = allProducts.results.filter(p => p.official_store_id !== null);
+    const officialStores = new Set(officialStoreProducts.map(p => p.official_store_id)).size;
 
-    // 3. Cálculo de precios
-    const prices = filteredProducts.results.map(item => item.price);
+    // Obtener visitas del producto
+    const visitHistory = await getProductVisits(product.id);
+    const totalVisits = visitHistory.reduce((sum, visit) => sum + visit.total, 0);
+
+    // Obtener tendencias de búsqueda
+    const trends = await getTrendingSearches(product.catalog_product_id?.split('-')[1]);
+
+    // Obtener precio competitivo si es producto Garmin
+    const priceToWin = isGarminProduct ? 
+      await getPriceToWin(product.id) : 
+      null;
+
+    // Calcular métricas de rendimiento
+    const sellThroughRate = (product.sold_quantity / (product.sold_quantity + product.available_quantity)) * 100;
+    
+    // La tasa de conversión será null si no tenemos datos de visitas
+    const conversionRate = totalVisits > 0 ? 
+      (product.sold_quantity / totalVisits) * 100 : 
+      null;
+
+    // Calcular promedios y mediana de precios
+    const prices = filteredProducts.results.map(p => p.price);
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
     const averagePrice = prices.reduce((sum, price) => sum + price, 0) / prices.length;
-    const medianPrice = getMedian(prices);
+    const medianPrice = calculateMedianPrice(prices);
 
-    // Comparar precio Garmin con el promedio
-    let garminPrice = 0;
-    let priceTrend = 0;
-    if (garminProducts.length > 0) {
-      garminPrice = garminProducts[0].price;
-      priceTrend = ((garminPrice - averagePrice) / averagePrice) * 100;
-    }
+    // Calcular tendencia de precios respecto a Garmin
+    const priceTrend = isGarminProduct && garminProducts.length > 0 ?
+      ((garminProducts[0].price - averagePrice) / averagePrice) * 100 :
+      0;
 
-    // 4. Cálculo de ventas y tendencias
-    const totalSales = filteredProducts.results.reduce((sum, item) => sum + item.sold_quantity, 0);
-    const avgSales = totalSales / filteredProducts.results.length;
-    const salesTrend = ((product.sold_quantity - avgSales) / avgSales) * 100;
-
-    // 5. Análisis de competidores
+    // Análisis de competidores
     const competitors = new Map<number, Product[]>();
     allProducts.results.forEach(p => {
       if (!competitors.has(p.seller.id)) {
@@ -351,197 +411,163 @@ export const getMarketAnalysis = async (
       competitors.get(p.seller.id)?.push(p);
     });
 
-    const competitorAnalysis: CompetitorAnalysis[] = Array.from(competitors.entries())
-      .map(([sellerId, products]) => {
-        const totalListings = products.length;
-        const sellerAvgPrice = products.reduce((sum, p) => sum + p.price, 0) / totalListings;
-        const freeShippingCount = products.filter(p => p.shipping.free_shipping).length;
-        
-        return {
-          sellerId,
-          nickname: products[0].seller.nickname,
-          totalListings,
-          averagePrice: sellerAvgPrice,
-          marketShare: (totalListings / allProducts.results.length) * 100,
-          shippingStrategy: {
-            freeShippingPercentage: (freeShippingCount / totalListings) * 100
-          },
-          stockStrategy: {
-            averageStock: products.reduce((sum, p) => sum + p.available_quantity, 0) / totalListings
-          },
-          keywordStrategy: analyzeKeywords(products)
-        };
-      })
-      .sort((a, b) => b.marketShare - a.marketShare)
-      .slice(0, 10);
+    const competitorAnalysis = await Promise.all(
+      Array.from(competitors.entries())
+        .map(async ([sellerId, products]) => {
+          const totalListings = products.length;
+          const sellerAvgPrice = products.reduce((sum, p) => sum + p.price, 0) / totalListings;
+          const freeShippingCount = products.filter(p => p.shipping.free_shipping).length;
+          const fullServiceCount = products.filter(p => p.shipping.logistic_type === 'fulfillment').length;
+          const sameDayCount = products.filter(p => p.shipping.tags?.includes('same_day')).length;
+          
+          return {
+            sellerId,
+            nickname: products[0].seller.nickname,
+            totalListings,
+            averagePrice: sellerAvgPrice,
+            marketShare: (totalListings / allProducts.results.length) * 100,
+            shippingStrategy: {
+              freeShippingPercentage: (freeShippingCount / totalListings) * 100,
+              fullService: fullServiceCount > 0,
+              sameDay: sameDayCount > 0
+            },
+            stockStrategy: {
+              averageStock: products.reduce((sum, p) => sum + p.available_quantity, 0) / totalListings
+            },
+            keywordStrategy: analyzeKeywords(products)
+          };
+        })
+    );
 
-    // 6. Análisis de palabras clave
+    // Ordenar competidores por participación de mercado
+    competitorAnalysis.sort((a, b) => b.marketShare - a.marketShare);
+
+    // Análisis de palabras clave
     const topKeywords = analyzeKeywords(allProducts.results);
-    const keywordScore = isGarminProduct 
-      ? topKeywords.filter(k => product.title.toLowerCase().includes(k)).length * 10 
-      : 0;
+    const keywordScore = isGarminProduct ? 
+      topKeywords.filter(k => product.title.toLowerCase().includes(k)).length * 10 : 0;
 
-    // 7. Métricas de rendimiento
-    const estimatedViews = visitHistory.reduce((sum, v) => sum + v.total, 0);
-    const conversionRate = estimatedViews > 0 ? (product.sold_quantity / estimatedViews) * 100 : 0;
-    const healthScore = calculateHealthScore(product, averagePrice);
+    // Calcular potencial de ingresos
+    let potentialRevenue = null;
+    if (totalVisits > 0 && conversionRate !== null) {
+      const avgMonthlyVisits = totalVisits / (visitHistory.length || 30);
+      potentialRevenue = avgMonthlyVisits * (conversionRate / 100) * product.price * 12; // Anualizado
+    }
 
-    const uniqueSellers = new Set(allProducts.results.map(item => item.seller.id)).size;
-    // Tiendas oficiales (en este ejemplo, interpretado como la de Garmin, pero podría adaptarse si hubiera más)
-    const uniqueOfficialStores = new Set(
-      allProducts.results
-        .filter(p => p.seller.id === GARMIN_STORE_ID)
-        .map(p => p.seller.id)
-    ).size;
-    const officialStorePercentage = Math.round((uniqueOfficialStores / uniqueSellers) * 100);
-
-    // Nivel de competencia
-    let competitionLevel: 'low' | 'medium' | 'high' = 'low';
-    if (uniqueSellers > 50) competitionLevel = 'high';
-    else if (uniqueSellers > 20) competitionLevel = 'medium';
-
-    // Distribución de ventas
-    const salesRanges = [
-      { min: 0, max: 10, count: 0 },
-      { min: 11, max: 50, count: 0 },
-      { min: 51, max: 100, count: 0 },
-      { min: 101, max: Infinity, count: 0 }
-    ];
-    filteredProducts.results.forEach(item => {
-      const range = salesRanges.find(r => item.sold_quantity >= r.min && item.sold_quantity <= r.max);
-      if (range) range.count++;
-    });
-    const salesDistribution = salesRanges.map((range, index) => ({
-      range: index === salesRanges.length - 1 
-        ? `${range.min}+ ventas`
-        : `${range.min}-${range.max} ventas`,
-      percentage: Math.round((range.count / filteredProducts.results.length) * 100)
-    }));
-
-    // 8. Recomendaciones
+    // Generar recomendaciones basadas en los datos reales
     const recommendations = [];
-    if (isGarminProduct && garminPrice > 0) {
-      if (priceTrend > 10) {
-        recommendations.push(`El precio de Garmin (${formatPrice(garminPrice)}) está por encima del promedio del mercado (${formatPrice(averagePrice)}). Considera ajustarlo para mejorar la competitividad.`);
-      } else if (priceTrend < -10) {
-        recommendations.push(`El precio de Garmin (${formatPrice(garminPrice)}) está por debajo del promedio del mercado (${formatPrice(averagePrice)}). Podrías aumentarlo sin perder competitividad.`);
-      }
-
-      if (officialStorePercentage > 70) {
-        recommendations.push('Alta presencia de tiendas oficiales. Destaca el respaldo y garantía oficial de Garmin.');
-      }
-
-      if (competitionLevel === 'high') {
-        recommendations.push('Mercado muy competitivo. Enfatiza las ventajas de comprar directamente con Garmin.');
-      } else if (competitionLevel === 'low') {
-        recommendations.push('Baja competencia. Oportunidad para establecer precios más competitivos.');
-      }
-
-      if (visitHistory.length > 0) {
-        const lastVisits = visitHistory[visitHistory.length - 1].total;
-        const firstVisits = visitHistory[0].total;
-        if (lastVisits > firstVisits) {
-          recommendations.push('Las visitas están aumentando. Buen momento para destacar características exclusivas.');
-        } else if (lastVisits < firstVisits) {
-          recommendations.push('Las visitas están disminuyendo. Considera realizar promociones o mejorar la visibilidad.');
+    
+    if (isGarminProduct) {
+      if (priceToWin) {
+        if (product.price > priceToWin.price) {
+          recommendations.push(`Para mejorar competitividad, considera ajustar el precio a ${priceToWin.price}`);
+          priceToWin.advantages.forEach(advantage => {
+            recommendations.push(`Ventaja competitiva: ${advantage}`);
+          });
         }
       }
 
-      if (keywordScore < 50) {
-        recommendations.push('Optimiza el título con palabras clave más relevantes del mercado.');
+      if (priceTrend > 10) {
+        recommendations.push('El precio está por encima del promedio del mercado. Considera ajustarlo para mejorar la competitividad.');
+      } else if (priceTrend < -10) {
+        recommendations.push('El precio está por debajo del promedio del mercado. Podrías aumentarlo sin perder competitividad.');
       }
 
-      if (conversionRate < 2) {
-        recommendations.push('La tasa de conversión es baja. Considera mejorar la calidad de las imágenes y descripción.');
+      const topCompetitor = competitorAnalysis[0];
+      if (topCompetitor && topCompetitor.sellerId !== GARMIN_STORE_ID) {
+        if (topCompetitor.shippingStrategy.fullService && !product.shipping.logistic_type?.includes('fulfillment')) {
+          recommendations.push('Considera activar Mercado Envíos Full para competir con el líder del mercado.');
+        }
+        if (topCompetitor.shippingStrategy.sameDay && !product.shipping.tags?.includes('same_day')) {
+          recommendations.push('El líder ofrece envío en el día. Evalúa esta opción para mejorar competitividad.');
+        }
       }
 
-      if (healthScore < 70) {
-        recommendations.push('El health score del producto es bajo. Revisa el precio y el stock disponible.');
+      if (conversionRate !== null) {
+        if (conversionRate < 2) {
+          recommendations.push('La tasa de conversión es baja. Considera mejorar la descripción y fotos del producto.');
+        }
+      }
+
+      if (sellThroughRate < 20) {
+        recommendations.push('El ratio de ventas es bajo. Evalúa ajustar el precio o la estrategia de marketing.');
+      }
+
+      // Recomendaciones basadas en tendencias
+      if (trends.length > 0) {
+        const relevantTrends = trends.filter(trend => 
+          product.title.toLowerCase().includes(trend.keyword.toLowerCase())
+        );
+        if (relevantTrends.length > 0) {
+          recommendations.push('Hay búsquedas en tendencia relacionadas con este producto. Considera destacarlo.');
+        }
       }
     } else {
       recommendations.push('Este producto no está disponible en la tienda oficial de Garmin Argentina.');
     }
 
-    // 9. Oportunidad de mercado
-    const marketOpportunity = {
-      score: Math.min(100, Math.max(0, 
-        (healthScore * 0.3) + 
-        (conversionRate * 10) + 
-        (keywordScore * 0.3) +
-        (competitionLevel === 'low' ? 30 : competitionLevel === 'medium' ? 20 : 10)
-      )),
-      factors: [
-        `Health Score: ${healthScore.toFixed(1)}`,
-        `Tasa de conversión: ${conversionRate.toFixed(1)}%`,
-        `Optimización de keywords: ${keywordScore}%`,
-        `Nivel de competencia: ${competitionLevel}`
-      ],
-      potentialRevenue: averagePrice * avgSales * 12 // Estimación anual
-    };
+    const healthScore = calculateHealthScore(product, averagePrice);
 
-    // 10. Construir respuesta final
     return {
       averagePrice,
-      medianPrice,  // Nuevo campo con la mediana
+      medianPrice,
       priceRange: { min: minPrice, max: maxPrice },
-      totalSellers: uniqueSellers,
+      totalSellers: competitors.size,
       totalListings: filteredProducts.results.length,
       visitHistory,
-      salesTrend,
+      salesTrend: 0, // No tenemos acceso a datos históricos de ventas
       priceTrend,
-      competitionLevel,
+      competitionLevel: competitors.size > 50 ? 'high' : competitors.size > 20 ? 'medium' : 'low',
       recommendations,
-      officialStores: uniqueOfficialStores,
-      officialStorePercentage,
-      activeSellers: uniqueSellers,
-      newSellers: Math.floor(uniqueSellers * 0.15),
-      salesDistribution,
+      officialStores,
+      officialStorePercentage: (officialStores / competitors.size) * 100,
+      activeSellers: competitors.size,
+      newSellers: Math.floor(competitors.size * 0.15),
+      salesDistribution: [],
       garminProducts,
       isGarminProduct,
-
-      // Análisis avanzado
+      
       priceAnalysis: {
         current: product.price,
-        // Ajustamos la simulación del histórico: incrementamos o disminuimos un poco el precio en cada punto
-        historical: visitHistory.map((v, i) => {
-          const percentChange = (i - (visitHistory.length - 1)) * 0.015; // ejemplo
-          const changedPrice = product.price * (1 + percentChange);
-          return {
-            date: v.date,
-            price: parseFloat(changedPrice.toFixed(2)),
-            change: i === 0 ? 0 : parseFloat((percentChange * 100).toFixed(2))
-          };
-        }),
+        historical: visitHistory.map(v => ({
+          date: v.date,
+          price: product.price,
+          change: 0
+        })),
         trend: priceTrend > 0 ? 'up' : priceTrend < 0 ? 'down' : 'stable',
-        priceElasticity: calculatePriceElasticity(
-          [0, priceTrend],
-          [0, salesTrend]
-        )
+        priceToWin: priceToWin?.price,
+        competitiveAdvantages: priceToWin?.advantages
       },
       competitorAnalysis,
       performanceMetrics: {
         conversionRate,
-        sellThroughRate: (product.sold_quantity / (product.sold_quantity + product.available_quantity)) * 100,
-        questionRate: Math.random() * 100, // Simulado - requiere datos reales
+        sellThroughRate,
+        questionRate: null, // No tenemos acceso a datos de preguntas
         healthScore,
         visibility: keywordScore
       },
       keywordAnalysis: {
         topKeywords,
         keywordScore,
-        suggestedKeywords: topKeywords.filter(k => !product.title.toLowerCase().includes(k))
+        suggestedKeywords: topKeywords.filter(k => !product.title.toLowerCase().includes(k)),
+        trendingKeywords: trends.map(t => t.keyword)
       },
-      marketOpportunity
+      marketOpportunity: {
+        score: Math.min(100, Math.max(0, 
+          (sellThroughRate * 0.3) + 
+          ((conversionRate || 0) * 10) +
+          (competitors.size < 20 ? 30 : competitors.size < 50 ? 20 : 10)
+        )),
+        factors: [
+          `Sell-through Rate: ${sellThroughRate.toFixed(1)}%`,
+          conversionRate ? `Tasa de conversión: ${conversionRate.toFixed(1)}%` : 'Sin datos de conversión',
+          `Nivel de competencia: ${competitors.size} vendedores`
+        ],
+        potentialRevenue
+      }
     };
   } catch (error) {
     console.error('Error al realizar análisis de mercado:', error);
     throw error;
   }
 };
-
-function formatPrice(price: number): string {
-  return new Intl.NumberFormat('es-AR', {
-    style: 'currency',
-    currency: 'ARS'
-  }).format(price);
-}
