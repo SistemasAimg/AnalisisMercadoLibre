@@ -26,6 +26,16 @@ console.log('Variables de entorno de Supabase:', {
   key: process.env.VITE_SUPABASE_ANON_KEY ? 'presente' : 'faltante'
 });
 
+// Configurar rutas de la API antes de servir archivos estáticos
+app.use('/api', (req, res, next) => {
+  // Asegurarse de que las rutas de la API no sirvan el index.html
+  if (req.path.startsWith('/proxy') || req.path.startsWith('/auth')) {
+    next();
+  } else {
+    res.status(404).json({ error: 'API endpoint not found' });
+  }
+});
+
 // Endpoint para intercambio de código por token
 app.post('/api/auth/token', async (req, res) => {
   try {
@@ -169,69 +179,90 @@ app.get('/api/proxy/search', async (req, res) => {
   }
 });
 
-// Nuevo endpoint para obtener visitas totales por producto
-app.get('/api/proxy/product-visits', async (req, res) => {
+// Proxy para obtener productos de un vendedor
+app.get('/api/proxy/users/:userId/items/search', async (req, res) => {
   try {
-    const { q, official_store_only } = req.query;
+    const { userId } = req.params;
+    const { limit = 50, offset = 0 } = req.query;
+    
     const authHeader = req.headers.authorization;
-
-    if (!q) {
-      return res.status(400).json({ error: 'Se requiere un término de búsqueda' });
-    }
-
-    // Buscar todas las publicaciones del producto
-    const searchResponse = await axios.get(
-      `https://api.mercadolibre.com/sites/MLA/search`,
+    
+    const response = await axios.get(
+      `https://api.mercadolibre.com/users/${userId}/items/search`,
       {
         params: {
-          q,
-          limit: 50,
-          ...(official_store_only === 'true' && { official_store: 'yes' })
+          limit,
+          offset
         },
         headers: {
           ...(authHeader && { Authorization: authHeader })
         }
       }
     );
+    
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener productos del vendedor:', error);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener productos del vendedor',
+      details: error.response?.data || error.message
+    });
+  }
+});
 
-    // Obtener visitas para cada publicación
-    const visitsPromises = searchResponse.data.results.map(product =>
-      axios.get(`https://api.mercadolibre.com/items/${product.id}/visits/time_window`, {
-        params: { last: 30, unit: 'day' },
+// Proxy para obtener detalles de items
+app.get('/api/proxy/items', async (req, res) => {
+  try {
+    const { ids } = req.query;
+    if (!ids) {
+      return res.status(400).json({ error: 'Se requiere el parámetro ids' });
+    }
+    
+    const authHeader = req.headers.authorization;
+    
+    const response = await axios.get(
+      `https://api.mercadolibre.com/items`,
+      {
+        params: { ids },
         headers: {
           ...(authHeader && { Authorization: authHeader })
         }
-      }).catch(error => {
-        console.error(`Error al obtener visitas para ${product.id}:`, error);
-        return { data: { results: [] } };
-      })
-    );
-
-    const visitsResponses = await Promise.all(visitsPromises);
-
-    // Combinar y sumar las visitas por fecha
-    const combinedVisits = {};
-    visitsResponses.forEach(response => {
-      if (response.data.results) {
-        response.data.results.forEach(visit => {
-          if (!combinedVisits[visit.date]) {
-            combinedVisits[visit.date] = 0;
-          }
-          combinedVisits[visit.date] += visit.total;
-        });
       }
-    });
-
-    // Convertir a array y ordenar por fecha
-    const results = Object.entries(combinedVisits)
-      .map(([date, total]) => ({ date, total }))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    res.json({ results });
+    );
+    
+    res.json(response.data);
   } catch (error) {
-    console.error('Error al obtener visitas totales:', error);
-    res.status(500).json({
-      error: 'Error al obtener visitas totales',
+    console.error('Error al obtener detalles de items:', error);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener detalles de items',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Proxy para obtener visitas
+app.get('/api/proxy/items/:itemId/visits/time_window', async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const { last = 30, unit = 'day' } = req.query;
+    
+    const authHeader = req.headers.authorization;
+    
+    const response = await axios.get(
+      `https://api.mercadolibre.com/items/${itemId}/visits/time_window`,
+      {
+        params: { last, unit },
+        headers: {
+          ...(authHeader && { Authorization: authHeader })
+        }
+      }
+    );
+    
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener visitas:', error);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener visitas',
       details: error.response?.data || error.message
     });
   }
@@ -242,6 +273,10 @@ app.use(express.static(path.join(__dirname, 'dist')));
 
 // Todas las demás rutas sirven el index.html para el enrutamiento del lado del cliente
 app.get('*', (req, res) => {
+  // No servir index.html para rutas de la API
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
