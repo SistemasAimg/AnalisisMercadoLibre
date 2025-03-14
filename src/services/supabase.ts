@@ -82,20 +82,43 @@ export async function insertProductData(productData: any) {
 
     if (sellerError) throw sellerError;
 
-    return { success: true };
+    return { success: true, productId: product.id };
   } catch (error) {
     console.error('Error al insertar datos:', error);
     return { success: false, error };
   }
 }
 
-// Función para insertar datos de competencia
-export async function insertCompetitorData(productId: string, competitorData: any) {
+// Función para obtener el UUID de un producto por su item_id
+async function getProductUUID(itemId: string): Promise<string | null> {
   try {
+    const { data, error } = await supabase
+      .from('products')
+      .select('id')
+      .eq('item_id', itemId)
+      .single();
+
+    if (error) throw error;
+    return data?.id || null;
+  } catch (error) {
+    console.error('Error al obtener UUID del producto:', error);
+    return null;
+  }
+}
+
+// Función para insertar datos de competencia
+export async function insertCompetitorData(itemId: string, competitorData: any) {
+  try {
+    // Primero obtener el UUID del producto
+    const productUUID = await getProductUUID(itemId);
+    if (!productUUID) {
+      throw new Error(`No se encontró el producto con item_id: ${itemId}`);
+    }
+
     const { error } = await supabase
       .from('competitor_data')
       .insert({
-        product_id: productId,
+        product_id: productUUID,
         competitor_seller_id: competitorData.seller.id.toString(),
         date: new Date().toISOString().split('T')[0],
         price: competitorData.price,
@@ -114,12 +137,18 @@ export async function insertCompetitorData(productId: string, competitorData: an
 }
 
 // Función para insertar datos de visitas
-export async function insertVisitsData(productId: string, visitsData: any) {
+export async function insertVisitsData(itemId: string, visitsData: any) {
   try {
+    // Primero obtener el UUID del producto
+    const productUUID = await getProductUUID(itemId);
+    if (!productUUID) {
+      throw new Error(`No se encontró el producto con item_id: ${itemId}`);
+    }
+
     const { error } = await supabase
       .from('visits_data')
       .insert({
-        product_id: productId,
+        product_id: productUUID,
         date: new Date().toISOString().split('T')[0],
         visits_today: visitsData.total || 0,
         visits_last_7_days: visitsData.last_7_days || 0,
