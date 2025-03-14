@@ -74,6 +74,6 @@ npm install
 # Iniciar servidor de desarrollo
 npm run dev
 
-# Construir para producción
+# Construir para producciónasdfgh
 npm run build
 ```
