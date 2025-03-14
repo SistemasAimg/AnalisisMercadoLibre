@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { exchangeCodeForToken } from '../services/auth';
 import { CheckCircle, AlertCircle, Loader } from 'lucide-react';
+import { supabase } from '../services/supabase';
 
 const AuthCallback: React.FC = () => {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -24,7 +25,27 @@ const AuthCallback: React.FC = () => {
         }
         
         // Intercambiar el código por un token
-        await exchangeCodeForToken(code);
+        const mlToken = await exchangeCodeForToken(code);
+
+        // Autenticar en Supabase usando el token de ML como contraseña
+        const { data: { user }, error: supabaseError } = await supabase.auth.signUp({
+          email: `ml_${mlToken.user_id}@mercadoanalytics.com`,
+          password: mlToken.access_token,
+        });
+
+        if (supabaseError && supabaseError.message !== 'User already registered') {
+          throw supabaseError;
+        }
+
+        // Iniciar sesión en Supabase
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: `ml_${mlToken.user_id}@mercadoanalytics.com`,
+          password: mlToken.access_token,
+        });
+
+        if (signInError) {
+          throw signInError;
+        }
         
         if (isMounted) {
           setStatus('success');
@@ -74,7 +95,7 @@ const AuthCallback: React.FC = () => {
             </div>
             <h2 className="text-xl font-medium text-gray-800 mb-2">Autenticando...</h2>
             <p className="text-gray-600">
-              Estamos procesando tu inicio de sesión con MercadoLibre.
+              Estamos procesando tu inicio de sesión.
               Por favor, espera un momento.
             </p>
           </div>
@@ -87,7 +108,7 @@ const AuthCallback: React.FC = () => {
             </div>
             <h2 className="text-xl font-medium text-gray-800 mb-2">¡Autenticación exitosa!</h2>
             <p className="text-gray-600 mb-4">
-              Has iniciado sesión correctamente con tu cuenta de MercadoLibre.
+              Has iniciado sesión correctamente.
             </p>
             <div className="bg-blue-50 text-blue-700 px-4 py-3 rounded-lg mb-4">
               Serás redirigido a la página principal en <span className="font-bold">{countdown}</span> segundos...

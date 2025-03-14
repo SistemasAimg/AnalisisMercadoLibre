@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { getAccessToken } from './auth';
+import { insertProductData, insertCompetitorData, insertVisitsData, insertTrendsData } from './supabase';
 
 // Single axios instance for all API calls through our proxy
 const api = axios.create({
@@ -367,7 +368,31 @@ export const searchProducts = async (
     // Verificar y sanitizar la respuesta
     const results = Array.isArray(response.data?.results) ? response.data.results : [];
     const paging = response.data?.paging || { total: 0, offset: 0, limit: 20 };
-    
+
+    // Guardar datos en Supabase
+    for (const product of results) {
+      try {
+        await insertProductData(product);
+
+        // Guardar datos de competencia si no es nuestro producto
+        if (product.seller.id !== GARMIN_STORE_ID) {
+          await insertCompetitorData(product.id, product);
+        }
+
+        // Obtener y guardar datos de visitas
+        const visitsResponse = await getProductVisits(product.id);
+        if (visitsResponse.length > 0) {
+          await insertVisitsData(product.id, {
+            total: visitsResponse[0].total,
+            last_7_days: visitsResponse.slice(0, 7).reduce((sum, v) => sum + v.total, 0),
+            last_30_days: visitsResponse.reduce((sum, v) => sum + v.total, 0)
+          });
+        }
+      } catch (error) {
+        console.error('Error al guardar datos del producto:', error);
+      }
+    }
+
     // Filtrar por ventas mínimas si es necesario
     const filteredResults = filters?.minSales && filters.minSales > 0 ?
       results.filter(product => product.sold_quantity >= filters.minSales) :
