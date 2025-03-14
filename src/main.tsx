@@ -5,6 +5,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import App from './App.tsx';
 import WebhooksPage from './pages/WebhooksPage.tsx';
 import AuthCallback from './components/AuthCallback.tsx';
+import { checkSupabaseConnection } from './services/supabase';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -15,6 +16,17 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// Verificar la conexión a Supabase al iniciar la aplicación
+checkSupabaseConnection()
+  .then(connected => {
+    if (!connected) {
+      console.error('No se pudo establecer conexión con Supabase');
+    }
+  })
+  .catch(error => {
+    console.error('Error al verificar la conexión con Supabase:', error);
+  });
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
