@@ -3,6 +3,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
 import cors from 'cors';
+import dotenv from 'dotenv';
+
+// Cargar variables de entorno
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,6 +21,10 @@ app.use(express.json());
 
 // Log para depuración
 console.log(`Iniciando servidor en ${HOST}:${PORT}`);
+console.log('Variables de entorno de Supabase:', {
+  url: process.env.VITE_SUPABASE_URL ? 'presente' : 'faltante',
+  key: process.env.VITE_SUPABASE_ANON_KEY ? 'presente' : 'faltante'
+});
 
 // Endpoint para intercambio de código por token
 app.post('/api/auth/token', async (req, res) => {
