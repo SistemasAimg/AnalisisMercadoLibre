@@ -2,13 +2,13 @@ import axios from 'axios';
 import { getAccessToken } from './auth';
 import { insertProductData, insertCompetitorData, insertVisitsData, insertTrendsData } from './supabase';
 
+// ID de la tienda oficial de Garmin Argentina
+const GARMIN_STORE_ID = 225076335;
+
 // Single axios instance for all API calls through our proxy
 const api = axios.create({
   baseURL: '/api/proxy'
 });
-
-// ID de la tienda oficial de Garmin Argentina
-const GARMIN_STORE_ID = 225076335;
 
 // Add auth token when available
 api.interceptors.request.use(async (config) => {
@@ -169,6 +169,7 @@ export interface MarketAnalysis {
 // Obtener todos los productos de un vendedor
 const getSellerProducts = async (sellerId: number): Promise<Product[]> => {
   try {
+    // Primero obtener los IDs de los productos
     const response = await api.get(`/users/${sellerId}/items/search`, {
       params: {
         search_type: 'scan',
@@ -176,34 +177,35 @@ const getSellerProducts = async (sellerId: number): Promise<Product[]> => {
       }
     });
 
-    // Verificar que response.data y results existan
-    if (!response.data?.results) {
-      console.error('Respuesta inválida al buscar productos del vendedor');
+    // Validar la respuesta
+    if (!response.data || !Array.isArray(response.data.results)) {
+      console.error('Respuesta inválida al buscar productos del vendedor:', response.data);
       return [];
     }
 
     const itemIds = response.data.results;
-    if (!Array.isArray(itemIds) || itemIds.length === 0) {
-      return [];
-    }
+    if (itemIds.length === 0) return [];
 
     // Obtener detalles de productos en lotes de 20
     const products: Product[] = [];
     for (let i = 0; i < itemIds.length; i += 20) {
-      const batch = itemIds.slice(i, i + 20);
       try {
+        const batch = itemIds.slice(i, i + 20);
         const itemsResponse = await api.get('/items', {
           params: {
-            ids: batch.join(','),
-            attributes: 'id,title,price,currency_id,available_quantity,sold_quantity,thumbnail,condition,permalink,date_created,last_updated,catalog_product_id,seller,shipping,official_store_id'
+            ids: batch.join(',')
           }
         });
-        
+
+        // Validar la respuesta de los detalles
         if (Array.isArray(itemsResponse.data)) {
-          products.push(...itemsResponse.data.map(item => item.body));
+          const validProducts = itemsResponse.data
+            .filter(item => item && item.body)
+            .map(item => item.body);
+          products.push(...validProducts);
         }
       } catch (error) {
-        console.error(`Error al obtener detalles del lote de productos:`, error);
+        console.error(`Error al obtener detalles del lote ${i}:`, error);
       }
     }
 
@@ -215,29 +217,27 @@ const getSellerProducts = async (sellerId: number): Promise<Product[]> => {
 };
 
 // Obtener visitas de un producto
-export const getProductVisits = async (
-  productId: string,
-  days: number = 30
-): Promise<VisitData[]> => {
+export const getProductVisits = async (productId: string): Promise<VisitData[]> => {
   try {
     const response = await api.get(`/items/${productId}/visits/time_window`, {
       params: {
-        last: days,
+        last: 30,
         unit: 'day'
       }
     });
 
-    // Verificar que response.data y results existan
-    if (!response.data?.results) {
+    // Validar la respuesta
+    if (!response.data || !Array.isArray(response.data.results)) {
+      console.error('Respuesta inválida al obtener visitas:', response.data);
       return [];
     }
 
     return response.data.results.map((visit: any) => ({
       date: visit.date,
-      total: visit.total || 0,
+      total: typeof visit.total === 'number' ? visit.total : 0,
       source: Array.isArray(visit.visits_detail) ? visit.visits_detail.map((detail: any) => ({
         company: detail.company || 'unknown',
-        total: detail.total || 0
+        total: typeof detail.total === 'number' ? detail.total : 0
       })) : undefined
     }));
   } catch (error) {
@@ -254,7 +254,7 @@ const getTrendingSearches = async (categoryId?: string): Promise<Trend[]> => {
       '/trends/MLA';
     
     const response = await api.get(endpoint);
-    return Array.isArray(response.data) ? response.data : [];
+    return response.data || [];
   } catch (error) {
     console.error('Error al obtener tendencias:', error);
     return [];
@@ -268,12 +268,9 @@ const getPriceToWin = async (productId: string): Promise<{
 } | null> => {
   try {
     const response = await api.get(`/items/${productId}/price_to_win`);
-    if (!response.data) return null;
-    
     return {
-      price: response.data.price || 0,
-      advantages: Array.isArray(response.data.competitive_advantages) ? 
-        response.data.competitive_advantages : []
+      price: response.data.price,
+      advantages: response.data.competitive_advantages || []
     };
   } catch (error) {
     console.error('Error al obtener precio competitivo:', error);
@@ -283,8 +280,6 @@ const getPriceToWin = async (productId: string): Promise<{
 
 // Calcular mediana de precios
 const calculateMedianPrice = (prices: number[]): number => {
-  if (!Array.isArray(prices) || prices.length === 0) return 0;
-  
   const sorted = [...prices].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   
@@ -297,13 +292,9 @@ const calculateMedianPrice = (prices: number[]): number => {
 
 // Analizar keywords
 const analyzeKeywords = (products: Product[]): string[] => {
-  if (!Array.isArray(products) || products.length === 0) return [];
-  
   const keywords = new Map<string, number>();
   
   products.forEach(product => {
-    if (!product.title) return;
-    
     const words = product.title
       .toLowerCase()
       .split(' ')
@@ -322,8 +313,6 @@ const analyzeKeywords = (products: Product[]): string[] => {
 
 // Calcular health score
 const calculateHealthScore = (product: Product, marketAverage: number): number => {
-  if (!product || typeof marketAverage !== 'number') return 0;
-  
   let score = 100;
   
   // Penalización por precio muy alejado del promedio
@@ -365,48 +354,42 @@ export const searchProducts = async (
       }
     });
 
-    // Verificar y sanitizar la respuesta
-    const results = Array.isArray(response.data?.results) ? response.data.results : [];
-    const paging = response.data?.paging || { total: 0, offset: 0, limit: 20 };
+    // Validar la respuesta
+    if (!response.data || !Array.isArray(response.data.results)) {
+      console.error('Respuesta inválida en búsqueda:', response.data);
+      return {
+        results: [],
+        paging: { total: 0, offset: 0, limit }
+      };
+    }
+
+    // Filtrar resultados por ventas mínimas si es necesario
+    let results = response.data.results;
+    if (filters?.minSales && filters.minSales > 0) {
+      results = results.filter(product => 
+        typeof product.sold_quantity === 'number' && 
+        product.sold_quantity >= filters.minSales!
+      );
+    }
 
     // Guardar datos en Supabase
     for (const product of results) {
       try {
         await insertProductData(product);
-
-        // Guardar datos de competencia si no es nuestro producto
-        if (product.seller.id !== GARMIN_STORE_ID) {
-          await insertCompetitorData(product.id, product);
-        }
-
-        // Obtener y guardar datos de visitas
-        const visitsResponse = await getProductVisits(product.id);
-        if (visitsResponse.length > 0) {
-          await insertVisitsData(product.id, {
-            total: visitsResponse[0].total,
-            last_7_days: visitsResponse.slice(0, 7).reduce((sum, v) => sum + v.total, 0),
-            last_30_days: visitsResponse.reduce((sum, v) => sum + v.total, 0)
-          });
-        }
       } catch (error) {
-        console.error('Error al guardar datos del producto:', error);
+        console.error('Error al guardar producto en Supabase:', error);
       }
     }
 
-    // Filtrar por ventas mínimas si es necesario
-    const filteredResults = filters?.minSales && filters.minSales > 0 ?
-      results.filter(product => product.sold_quantity >= filters.minSales) :
-      results;
-
     return {
-      results: filteredResults,
-      paging
+      results,
+      paging: response.data.paging || { total: results.length, offset, limit }
     };
   } catch (error) {
     console.error('Error en búsqueda de productos:', error);
     return {
       results: [],
-      paging: { total: 0, offset: 0, limit: 20 }
+      paging: { total: 0, offset: 0, limit }
     };
   }
 };
@@ -423,7 +406,7 @@ export const getMarketAnalysis = async (
       await searchProducts(product.title, filters) : 
       allProducts;
 
-    if (!Array.isArray(filteredProducts.results) || filteredProducts.results.length === 0) {
+    if (!allProducts.results.length) {
       throw new Error('No hay suficientes datos para realizar un análisis');
     }
 
