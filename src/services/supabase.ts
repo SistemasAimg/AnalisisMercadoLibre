@@ -7,11 +7,7 @@ const getSupabaseClient = () => {
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('Variables de entorno de Supabase no encontradas:', {
-      url: supabaseUrl ? 'presente' : 'faltante',
-      key: supabaseAnonKey ? 'presente' : 'faltante'
-    });
-    return null;
+    throw new Error('Faltan las variables de entorno de Supabase');
   }
 
   return createClient<Database>(supabaseUrl, supabaseAnonKey);
@@ -22,28 +18,19 @@ export const supabase = getSupabaseClient();
 
 // Función para verificar la conexión
 export const checkSupabaseConnection = async () => {
-  if (!supabase) {
-    throw new Error('Cliente de Supabase no inicializado');
-  }
-
   try {
     const { data, error } = await supabase.from('products').select('count');
     if (error) throw error;
     console.log('Conexión a Supabase establecida correctamente');
     return true;
   } catch (error) {
-    console.error('Error al conectar con Supabase:', error);
-    return false;
+    console.error('Error al verificar la conexión con Supabase:', error);
+    throw error;
   }
 };
 
 // Función para insertar datos de productos
 export async function insertProductData(productData: any) {
-  if (!supabase) {
-    console.error('Cliente de Supabase no disponible');
-    return { success: false, error: 'Cliente de Supabase no disponible' };
-  }
-
   try {
     // Primero insertar o actualizar el producto base
     const { data: product, error: productError } = await supabase
@@ -104,10 +91,6 @@ export async function insertProductData(productData: any) {
 
 // Función para insertar datos de competencia
 export async function insertCompetitorData(productId: string, competitorData: any) {
-  if (!supabase) {
-    return { success: false, error: 'Cliente de Supabase no disponible' };
-  }
-
   try {
     const { error } = await supabase
       .from('competitor_data')
@@ -132,10 +115,6 @@ export async function insertCompetitorData(productId: string, competitorData: an
 
 // Función para insertar datos de visitas
 export async function insertVisitsData(productId: string, visitsData: any) {
-  if (!supabase) {
-    return { success: false, error: 'Cliente de Supabase no disponible' };
-  }
-
   try {
     const { error } = await supabase
       .from('visits_data')
@@ -157,10 +136,6 @@ export async function insertVisitsData(productId: string, visitsData: any) {
 
 // Función para insertar tendencias
 export async function insertTrendsData(trendsData: any[]) {
-  if (!supabase) {
-    return { success: false, error: 'Cliente de Supabase no disponible' };
-  }
-
   try {
     const trends = trendsData.map(trend => ({
       keyword: trend.keyword,

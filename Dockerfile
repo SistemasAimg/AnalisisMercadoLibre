@@ -1,6 +1,14 @@
 # Build stage
 FROM node:20-alpine as build
 
+# Recibir argumentos de construcción
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+
+# Establecer variables de entorno para la etapa de construcción
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+
 WORKDIR /app
 
 # Copy package files and install dependencies

@@ -9,8 +9,6 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   SERVICE_NAME: mercadoanalytics
   REGION: us-central1
-  VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-  VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
 jobs:
   deploy:
@@ -36,17 +34,23 @@ jobs:
       - name: Authorize Docker push
         run: gcloud auth configure-docker
 
+      # Create .env file for build time
       - name: Create env file
         run: |
-          echo "VITE_ML_CLIENT_ID=${{ secrets.VITE_ML_CLIENT_ID }}" >> .env
-          echo "VITE_ML_CLIENT_SECRET=${{ secrets.VITE_ML_CLIENT_SECRET }}" >> .env
-          echo "VITE_ML_REDIRECT_URI=${{ secrets.VITE_ML_REDIRECT_URI }}" >> .env
-          echo "VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}" >> .env
-          echo "VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}" >> .env
+          cat << EOF > .env
+          VITE_ML_CLIENT_ID=${{ secrets.VITE_ML_CLIENT_ID }}
+          VITE_ML_CLIENT_SECRET=${{ secrets.VITE_ML_CLIENT_SECRET }}
+          VITE_ML_REDIRECT_URI=${{ secrets.VITE_ML_REDIRECT_URI }}
+          VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          EOF
 
       - name: Build and Push Container
         run: |-
-          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} .
+          docker build \
+            --build-arg VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }} \
+            --build-arg VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }} \
+            -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} .
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
 
       - name: Deploy to Cloud Run
@@ -56,10 +60,10 @@ jobs:
           service: ${{ env.SERVICE_NAME }}
           region: ${{ env.REGION }}
           image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
-          flags: --port=8080 --allow-unauthenticated --timeout=300s
           env_vars: |
             VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
             VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          flags: --port=8080 --allow-unauthenticated --timeout=300s
 
       - name: Show Output
         run: echo ${{ steps.deploy.outputs.url }}
