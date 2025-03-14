@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { exchangeCodeForToken } from '../services/auth';
 import { CheckCircle, AlertCircle, Loader } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import { createHash } from 'crypto-js/sha256';
 
 const AuthCallback: React.FC = () => {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -26,25 +27,29 @@ const AuthCallback: React.FC = () => {
         
         // Intercambiar el código por un token
         const mlToken = await exchangeCodeForToken(code);
+        
+        // Crear un hash del token para usar como contraseña (máximo 72 caracteres)
+        const passwordHash = createHash(mlToken.access_token).toString().slice(0, 72);
+        const email = `ml_${mlToken.user_id}@mercadoanalytics.com`;
 
-        // Autenticar en Supabase usando el token de ML como contraseña
-        const { data: { user }, error: supabaseError } = await supabase.auth.signUp({
-          email: `ml_${mlToken.user_id}@mercadoanalytics.com`,
-          password: mlToken.access_token,
+        // Intentar registrar al usuario
+        const { error: signUpError } = await supabase.auth.signUp({
+          email,
+          password: passwordHash,
         });
 
-        if (supabaseError && supabaseError.message !== 'User already registered') {
-          throw supabaseError;
-        }
+        // Si el usuario ya existe, iniciar sesión
+        if (signUpError && signUpError.message === 'User already registered') {
+          const { error: signInError } = await supabase.auth.signInWithPassword({
+            email,
+            password: passwordHash,
+          });
 
-        // Iniciar sesión en Supabase
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: `ml_${mlToken.user_id}@mercadoanalytics.com`,
-          password: mlToken.access_token,
-        });
-
-        if (signInError) {
-          throw signInError;
+          if (signInError) {
+            throw signInError;
+          }
+        } else if (signUpError) {
+          throw signUpError;
         }
         
         if (isMounted) {
