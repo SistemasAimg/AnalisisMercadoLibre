@@ -174,7 +174,7 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
       <div className="bg-white rounded-lg shadow-lg p-6">
         <div className="flex items-center mb-6">
           <BarChart3 size={24} className="text-blue-600 mr-2" />
-          <h2 className="text-xl font-bold text-gray-800">
+          <h2  className="text-xl font-bold text-gray-800">
             Análisis de mercado: {searchQuery}
           </h2>
         </div>
@@ -616,4 +616,4 @@ const MarketInsights: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
   );
 };
 
-export default MarketInsights;
+export default MarketInsights
