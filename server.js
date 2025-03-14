@@ -268,6 +268,101 @@ app.get('/api/proxy/items/:itemId/visits/time_window', async (req, res) => {
   }
 });
 
+// Proxy para obtener tendencias
+app.get('/api/proxy/trends/:siteId', async (req, res) => {
+  try {
+    const { siteId } = req.params;
+    const authHeader = req.headers.authorization;
+    
+    const response = await axios.get(
+      `https://api.mercadolibre.com/trends/${siteId}`,
+      {
+        headers: {
+          ...(authHeader && { Authorization: authHeader })
+        }
+      }
+    );
+    
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error al obtener tendencias:', error);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener tendencias',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Proxy para obtener precio competitivo
+app.get('/api/proxy/items/:itemId/price_to_win', async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const authHeader = req.headers.authorization;
+    
+    // Obtener datos del producto
+    const itemResponse = await axios.get(
+      `https://api.mercadolibre.com/items/${itemId}`,
+      {
+        headers: {
+          ...(authHeader && { Authorization: authHeader })
+        }
+      }
+    );
+
+    // Obtener productos similares
+    const similarResponse = await axios.get(
+      `https://api.mercadolibre.com/sites/MLA/search`,
+      {
+        params: {
+          q: itemResponse.data.title,
+          category: itemResponse.data.category_id,
+          limit: 50
+        },
+        headers: {
+          ...(authHeader && { Authorization: authHeader })
+        }
+      }
+    );
+
+    // Calcular precio competitivo
+    const prices = similarResponse.data.results
+      .map(item => item.price)
+      .filter(price => !isNaN(price) && price > 0);
+
+    if (prices.length === 0) {
+      return res.json({
+        price: itemResponse.data.price,
+        competitive_advantages: ['No hay suficientes datos para calcular un precio competitivo']
+      });
+    }
+
+    const averagePrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+    const competitivePrice = averagePrice * 0.95; // 5% por debajo del promedio
+
+    const advantages = [];
+    if (competitivePrice < itemResponse.data.price) {
+      advantages.push('Reducir el precio mejoraría la competitividad');
+    } else {
+      advantages.push('El precio actual es competitivo');
+    }
+
+    if (itemResponse.data.shipping.free_shipping) {
+      advantages.push('El envío gratis es una ventaja competitiva');
+    }
+
+    res.json({
+      price: competitivePrice,
+      competitive_advantages: advantages
+    });
+  } catch (error) {
+    console.error('Error al obtener precio competitivo:', error);
+    res.status(error.response?.status || 500).json({
+      error: 'Error al obtener precio competitivo',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
 // Servir archivos estáticos
 app.use(express.static(path.join(__dirname, 'dist')));
 
