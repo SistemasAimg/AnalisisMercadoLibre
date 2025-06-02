@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { exchangeCodeForToken } from '../services/auth';
 import { CheckCircle, AlertCircle, Loader } from 'lucide-react';
 import { supabase } from '../services/supabase';
-import { createHash } from 'crypto-js/sha256';
+import SHA256 from 'crypto-js/sha256';
 
 const AuthCallback: React.FC = () => {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -29,7 +29,7 @@ const AuthCallback: React.FC = () => {
         const mlToken = await exchangeCodeForToken(code);
         
         // Crear un hash del token para usar como contraseña (máximo 72 caracteres)
-        const passwordHash = createHash(mlToken.access_token).toString().slice(0, 72);
+        const passwordHash = SHA256(mlToken.access_token).toString().slice(0, 72);
         const email = `ml_${mlToken.user_id}@mercadoanalytics.com`;
 
         // Intentar registrar al usuario
