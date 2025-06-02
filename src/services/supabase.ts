@@ -19,12 +19,35 @@ export const supabase = getSupabaseClient();
 // Función para verificar la conexión
 export const checkSupabaseConnection = async () => {
   try {
-    const { data, error } = await supabase.from('products').select('count');
-    if (error) throw error;
+    // Primero verificamos que tengamos las credenciales
+    if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+      throw new Error('Credenciales de Supabase no encontradas en las variables de entorno');
+    }
+
+    // Intentamos una operación simple para verificar la conexión
+    const { data, error } = await supabase
+      .from('products')
+      .select('count')
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      // Si es un error de autenticación
+      if (error.code === 'auth/invalid-credential') {
+        throw new Error('Credenciales de Supabase inválidas');
+      }
+      // Si es un error de conexión
+      if (error.code === 'connection_error') {
+        throw new Error('No se pudo conectar a Supabase. Verifica tu conexión a internet');
+      }
+      throw error;
+    }
+
     console.log('Conexión a Supabase establecida correctamente');
     return true;
   } catch (error) {
     console.error('Error al verificar la conexión con Supabase:', error);
+    // Re-lanzamos el error para que pueda ser manejado por el código que llama a esta función
     throw error;
   }
 };
