@@ -52,18 +52,43 @@ Para que el flujo de trabajo funcione, debes configurar los siguientes secretos 
      --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-actions-pool/attribute.repository/your-github-username/your-repo-name"
    ```
 
-### Configuración de MercadoLibre (para desarrollo local)
+## Configuración para desarrollo local
+
+### 1. Configuración de Supabase
+
+Para el desarrollo local, necesitarás configurar una base de datos Supabase:
+
+1. Ve a [supabase.com](https://supabase.com) y crea una cuenta
+2. Crea un nuevo proyecto
+3. Ve a Settings > API en tu proyecto de Supabase
+4. Copia la URL del proyecto y la clave anónima (anon key)
+
+### 2. Configuración de MercadoLibre
 
 Para el desarrollo local y pruebas, necesitarás configurar las credenciales de MercadoLibre:
 
-1. Crea un archivo `.env` basado en `.env.example` con tus credenciales:
-   ```
-   VITE_ML_CLIENT_ID=your_client_id_here
-   VITE_ML_CLIENT_SECRET=your_client_secret_here
-   VITE_ML_REDIRECT_URI=http://localhost:5173/auth/callback
-   ```
+1. Ve a [developers.mercadolibre.com.ar](https://developers.mercadolibre.com.ar)
+2. Crea una aplicación y obtén tus credenciales
 
-2. Estas variables son necesarias para la autenticación con MercadoLibre, pero no son requeridas para el despliegue en Cloud Run.
+### 3. Variables de entorno
+
+Crea un archivo `.env` basado en `.env.example` con tus credenciales:
+
+```env
+# Credenciales de MercadoLibre
+VITE_ML_CLIENT_ID=tu_client_id_aqui
+VITE_ML_CLIENT_SECRET=tu_client_secret_aqui
+VITE_ML_REDIRECT_URI=http://localhost:5173/auth/callback
+
+# Credenciales de Supabase
+VITE_SUPABASE_URL=https://tu-proyecto-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=tu-anon-key-aqui
+```
+
+**Importante:** 
+- Las variables de Supabase son **obligatorias** para que la aplicación funcione
+- Las variables de MercadoLibre son necesarias para la autenticación con MercadoLibre
+- Para desarrollo local, usa `http://localhost:5173/auth/callback` como redirect URI
 
 ## Desarrollo local
 
@@ -74,6 +99,36 @@ npm install
 # Iniciar servidor de desarrollo
 npm run dev
 
-# Construir para producciónasdfgh
+# Construir para producción
 npm run build
 ```
+
+## Estructura de la base de datos
+
+La aplicación utiliza Supabase como base de datos. Las migraciones se encuentran en la carpeta `supabase/migrations/` y se aplicarán automáticamente cuando configures tu proyecto de Supabase.
+
+### Tablas principales:
+- `products`: Información básica de productos
+- `daily_product_data`: Datos diarios de productos (precios, ventas, stock)
+- `competitor_data`: Datos de productos de la competencia
+- `visits_data`: Datos de visitas y tráfico
+- `trends_data`: Tendencias y palabras clave
+- `sellers`: Información de vendedores
+
+## Solución de problemas
+
+### Error: "Faltan las variables de entorno de Supabase"
+
+Este error indica que las variables `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` no están configuradas en tu archivo `.env`. Asegúrate de:
+
+1. Crear un archivo `.env` en la raíz del proyecto
+2. Agregar las variables de Supabase con los valores correctos de tu proyecto
+3. Reiniciar el servidor de desarrollo después de agregar las variables
+
+### Error de autenticación con MercadoLibre
+
+Si tienes problemas con la autenticación:
+
+1. Verifica que las credenciales de MercadoLibre sean correctas
+2. Asegúrate de que la URL de redirección esté configurada correctamente en tu aplicación de MercadoLibre
+3. Para desarrollo local, usa `http://localhost:5173/auth/callback`
